@@ -18,3 +18,13 @@ dist/
 build/
 .env
 .env.local
+
+# Claude Code local settings (contains secrets)
+.claude/settings.local.json
+
+# Python caches (from bundled skill scripts)
+__pycache__/
+*.pyc
+
+# Generated download bundles (duplicates of files already tracked)
+week-1/quests/레시피북/1.zip
