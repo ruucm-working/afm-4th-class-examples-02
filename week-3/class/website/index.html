@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인스타그램 댄스 챌린지 트렌드 리서치</title>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <!-- ⚠️ 모든 CDN 버전 고정. Babel 은 반드시 7.x (8.x 는 인라인 text/babel 미지원) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.9/babel.min.js"></script>
+  <style>
+    /* Tailwind 유틸리티로 표현하기 어려운 애니메이션·효과만 커스텀 */
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .rise-in { animation: riseIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    .fade-in { animation: fadeIn 0.2s ease-out both; }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.96) translateY(10px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .pop-in { animation: popIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+    /* 인스타그램 시그니처 그라디언트 */
+    .ig-gradient {
+      background: linear-gradient(110deg, #f9ce34 0%, #ee2a7b 45%, #6228d7 100%);
+    }
+    .ig-text {
+      background: linear-gradient(110deg, #f9ce34 0%, #ee2a7b 45%, #a94ff5 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    /* 카드 테두리에 그라디언트를 입히기 위한 마스크 트릭 */
+    .ig-ring::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 1.5px;
+      background: linear-gradient(140deg, #f9ce34, #ee2a7b, #6228d7);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    .ig-ring:hover::before { opacity: 1; }
+
+    /* 배경 글로우 */
+    .glow {
+      background: radial-gradient(60% 55% at 50% 0%, rgba(238, 42, 123, 0.22) 0%, rgba(98, 40, 215, 0.10) 45%, transparent 75%);
+    }
+
+    /* 스크롤바 */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #09090b; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 6px; border: 2px solid #09090b; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useCallback, useEffect } = React;
+
+    // ========================================
+    // 📊 Research Data (2026-09-05 수집)
+    // ========================================
+
+    const RESEARCH_META = {
+      collectedAt: '2026-09-05',
+      keyword: '댄스챌린지',
+      scanned: 44,
+      selected: 19,
+      period: '2026-06 ~ 2026-08',
+    };
+
+    const CATEGORIES = [
+      { id: 'all',   label: '전체',            emoji: '✨' },
+      { id: 'guap',  label: 'GUAP',            emoji: '🥇' },
+      { id: 'iwyb',  label: 'I WANT YOU BACK', emoji: '🥈' },
+      { id: 'kpop',  label: 'K-pop 안무',      emoji: '🎤' },
+      { id: 'etc',   label: '기타 유행 안무',   emoji: '💃' },
+      { id: 'viral', label: '개별 바이럴',      emoji: '🔥' },
+      { id: 'past',  label: '과거 트렌드',      emoji: '🕰️' },
+    ];
+
+    const POSTS = [
+      // --- GUAP 챌린지 ---
+      { code: 'Db74TXwxRoU', cat: 'guap', tag: 'GUAP', account: 'emetsound', date: '2026-08-12', likes: 1533,
+        caption: '댄스챌린지 도전할 사람 굅✋', note: '원 음원 계정' },
+      { code: 'DcEDqhrToIe', cat: 'guap', tag: 'GUAP', account: 'dewdew.fd', date: '2026-08-15', likes: 542,
+        caption: '파리 잡는거 아님', note: '@emetsound 음원 사용' },
+      { code: 'DbpxIzNzrc8', cat: 'guap', tag: 'GUAP', account: 'pap_magazine', date: '2026-08-05', likes: 4302,
+        caption: '스크롤을 멈추게 한 네 사람, 에메트사운드', note: '매거진 트렌드 해설' },
+      { code: 'DbLMOqrj6qk', cat: 'guap', tag: 'GUAP', account: 'feverit.mag', date: '2026-07-24', likes: null,
+        caption: "'GUAP' 챌린지? 그냥 느껴.", note: '요즘 유행하는 트렌드는 이해하지 말고 그냥…' },
+      { code: 'Dap1_XSzkHY', cat: 'guap', tag: 'GUAP', account: 'shop_adde', date: '2026-07-11', likes: 555,
+        caption: '40만이 넘은 #guap 춤 뒤로..', note: '참여 40만 건 돌파 언급' },
+
+      // --- I WANT YOU BACK ---
+      { code: 'DabiCMiTk0r', cat: 'iwyb', tag: 'I WANT YOU BACK', account: 'bokbuinmanse', date: '2026-07-05', likes: 12000,
+        caption: '🪀방탄의 원츄백 댄스챌린지', note: '원곡 NSYNC가 직접 감사 인사 · 차트 재진입' },
+      { code: 'DaujmAcmZAt', cat: 'iwyb', tag: 'I WANT YOU BACK', account: 'pepperitmag', date: '2026-07-13', likes: 314,
+        caption: '30년 전 곡을 내 최애가 말아온 썰 👀', note: '브라더후드 안무 · 제이홉, 정국 참여' },
+
+      // --- K-pop 안무 ---
+      { code: 'DcsaQ1Nv1SU', cat: 'kpop', tag: "TUIDE 'GRLS'", account: 'defdance_official', date: '2026-08-30', likes: 260,
+        caption: 'TUIDE ‘GRLS’ 요즘 제대로 난리남. 🔥', note: '수집 표본 중 최신 · 선점 유망', isNew: true },
+      { code: 'DbdMwGxPMSv', cat: 'kpop', tag: '에스파 Lemonade', account: 'defdance_official', date: '2026-07-31', likes: 221,
+        caption: '🍋 에스파의 Lemonade Challenge, 아직 끝나지 않았습니다.', note: 'DEF 수강생 버전' },
+      { code: 'DZapKU3sQb-', cat: 'kpop', tag: 'CORTIS 〈REDRED〉', account: 'idolight.mag', date: '2026-06-10', likes: 13000,
+        caption: 'RED는 멈춤이라면서 해원 춤은 왜 계속 보게 만드는 건데;❤️‍🔥', note: 'NMIXX 오해원 · 음악중심 미니 팬미팅' },
+      { code: 'DZCkyQhTjlB', cat: 'kpop', tag: "아일릿 It's Me", account: 'pinkydance_dasan__', date: '2026-06-01', likes: 3046,
+        caption: '아일릿 "It\'s Me" 안무 쉽게 배우기', note: '포인트 안무 튜토리얼' },
+      { code: 'DbA-sNNOk98', cat: 'kpop', tag: "아일릿 It's Me", account: 'model__ella', date: '2026-07-20', likes: 808,
+        caption: '울탕탕탕탕 it’s me 😛', note: '외국인 모델 커버' },
+
+      // --- 기타 유행 안무 ---
+      { code: 'Da5G4UOBK42', cat: 'etc', tag: 'Aeropickles (오이 댄스)', account: 'imusmi_00', date: '2026-07-17', likes: 7305,
+        caption: '1234 ! 에어로빅 피클스 🥒', note: '#CucumberDance #AeropicklesDance' },
+      { code: 'DaNOS69xhtH', cat: 'etc', tag: 'GG EZ', account: 'fronting_official', date: '2026-06-30', likes: 2437,
+        caption: 'GG EZ👾', note: '4인 그룹 버전' },
+      { code: 'DZtIiqoTxAi', cat: 'etc', tag: 'GG EZ', account: 'true_dancestudio', date: '2026-06-17', likes: null,
+        caption: 'GG EZ', note: '댄스 스튜디오 버전' },
+
+      // --- 개별 바이럴 ---
+      { code: 'DasIZkpSn1c', cat: 'viral', tag: '반전 연출', account: 'big__bari', date: '2026-07-12', likes: 197000,
+        caption: '처음에 낚이신 분들이 많은 영상🤣 유행 탑승!', note: '수집 표본 중 좋아요 1위' },
+      { code: 'DcfrIsAJPCv', cat: 'viral', tag: '공감 후킹', account: 'adayday15', date: '2026-08-26', likes: 59000,
+        caption: '결혼은 얼굴? 능력? 직업? 다 필요없다', note: '텍스트 후킹 + 챌린지 포맷' },
+      { code: 'DaDU13TRN9_', cat: 'viral', tag: '현지인 난입', account: 'dohee_e0', date: '2026-06-26', likes: 16000,
+        caption: 'A local crashed my challenge while traveling..?! 🇻🇳', note: '여행지 돌발 상황 연출' },
+
+      // --- 과거 트렌드 (참고) ---
+      { code: 'DF4lN-iv8ei', cat: 'past', tag: '랫 댄스 (Rat Dance)', account: 'esquire.korea', date: '2025-02-09', likes: 5592,
+        caption: '중독적인 이 댄스 뭐예요~?🐭', note: "틱톡커 'ratomilton'의 3D 쥐가 'Chess'에 맞춰 추는 춤" },
+    ];
+
+    const RANKING = [
+      { medal: '🥇', cat: 'guap',  title: 'GUAP 챌린지',      period: '7월 ~ 8월 (진행 중)',
+        reason: '검색 상위에 6건 중복 등장, 참여 40만+', action: '지금 잡아야 할 것' },
+      { medal: '🥈', cat: 'iwyb',  title: 'I WANT YOU BACK',  period: '7월 ~ (지속)',
+        reason: 'BTS 제이홉·정국 참여, 원곡자 NSYNC가 직접 반응', action: '가장 안전한 선택' },
+      { medal: '🥉', cat: 'kpop',  title: "TUIDE 'GRLS'",     period: '8월 말 (신규)',
+        reason: '수집 표본 중 최신(8/30) · 아직 게시물 수가 적음', action: '선점 노릴 것' },
+    ];
+
+    const LIMITATIONS = [
+      'Instagram 검색 탭의 개인화된 추천 결과 기준이라 계정마다 다르게 보일 수 있습니다.',
+      '좋아요 수는 2026-09-05 수집 시점 값이며, 「비공개」는 게시자가 좋아요 수를 숨긴 경우입니다.',
+      '해시태그별 총 게시물 수는 Instagram이 비로그인·자동화 접근을 제한해 수집하지 않았습니다.',
+    ];
+
+    // ========================================
+    // 🛠️ Utilities
+    // ========================================
+
+    function formatLikes(n) {
+      if (n === null || n === undefined) return '비공개';
+      if (n >= 10000) {
+        const man = n / 10000;
+        return (man % 1 === 0 ? man.toFixed(0) : man.toFixed(1)) + '만';
+      }
+      return n.toLocaleString('ko-KR');
+    }
+
+    function formatDate(iso) {
+      const [y, m, d] = iso.split('-');
+      return `${y}.${m}.${d}`;
+    }
+
+    function postUrl(code) {
+      return `https://www.instagram.com/p/${code}/`;
+    }
+
+    function thumbSrc(code) {
+      return `thumbs/${code}.jpg`;
+    }
+
+    // ========================================
+    // 🎨 Design System Components
+    // ========================================
+
+    function Button({ variant = 'primary', size = 'md', disabled = false, onClick, className = '', children, ...rest }) {
+      const variants = {
+        primary: 'ig-gradient text-white hover:brightness-110 focus:ring-pink-500 shadow-lg shadow-pink-500/20',
+        secondary: 'bg-zinc-800 text-zinc-100 border border-zinc-700 hover:bg-zinc-700 focus:ring-zinc-500',
+        ghost: 'bg-transparent text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 focus:ring-zinc-600',
+      };
+      const sizes = {
+        sm: 'px-3 py-1.5 text-xs',
+        md: 'px-4 py-2 text-sm',
+        lg: 'px-6 py-3 text-base',
+      };
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition
+                      focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-950
+                      disabled:opacity-40 disabled:cursor-not-allowed
+                      ${variants[variant]} ${sizes[size]} ${className}`}
+          {...rest}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function Badge({ tone = 'neutral', className = '', children }) {
+      const tones = {
+        neutral: 'bg-zinc-800/80 text-zinc-300 border-zinc-700',
+        hot: 'bg-pink-500/15 text-pink-300 border-pink-500/40',
+        fresh: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+        muted: 'bg-zinc-800/50 text-zinc-500 border-zinc-800',
+      };
+      return (
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5
+                          text-[11px] font-semibold tracking-tight ${tones[tone]} ${className}`}>
+          {children}
+        </span>
+      );
+    }
+
+    function Card({ className = '', children, ...rest }) {
+      return (
+        <div className={`rounded-2xl border border-zinc-800 bg-zinc-900/60 backdrop-blur ${className}`} {...rest}>
+          {children}
+        </div>
+      );
+    }
+
+    function Modal({ isOpen, onClose, title, children, size = 'md' }) {
+      useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', onKey);
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+          document.removeEventListener('keydown', onKey);
+          document.body.style.overflow = prev;
+        };
+      }, [isOpen, onClose]);
+
+      if (!isOpen) return null;
+
+      const sizes = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl' };
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in"
+             role="dialog" aria-modal="true" aria-label={title}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+          <div className={`relative w-full ${sizes[size]} max-h-[90vh] overflow-y-auto rounded-2xl
+                           border border-zinc-800 bg-zinc-900 shadow-2xl pop-in`}>
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-zinc-800
+                            bg-zinc-900/95 px-5 py-4 backdrop-blur">
+              <h3 className="text-base font-bold text-zinc-100">{title}</h3>
+              <button onClick={onClose} aria-label="닫기"
+                      className="shrink-0 rounded-lg p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-5 py-5">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================
+    // 🧩 Layout Components
+    // ========================================
+
+    function Hero() {
+      return (
+        <header className="relative overflow-hidden border-b border-zinc-800">
+          <div className="glow absolute inset-0" aria-hidden="true" />
+          <div className="relative mx-auto max-w-6xl px-5 pb-14 pt-16 sm:pt-20">
+            <div className="rise-in">
+              <Badge tone="hot" className="mb-5">
+                <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
+                {RESEARCH_META.collectedAt} 수집
+              </Badge>
+              <h1 className="text-4xl font-black leading-[1.15] tracking-tight sm:text-6xl">
+                인스타그램<br />
+                <span className="ig-text">댄스 챌린지</span> 트렌드
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
+                Instagram 검색 탭에서 <span className="font-semibold text-zinc-200">'{RESEARCH_META.keyword}'</span> 키워드로
+                수집한 {RESEARCH_META.scanned}개 게시물 중, 최근 3개월({RESEARCH_META.period}) 위주로
+                <span className="font-semibold text-zinc-200"> {RESEARCH_META.selected}개</span>를 선별해 챌린지별로 정리했습니다.
+              </p>
+            </div>
+
+            <dl className="mt-10 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { k: '수집 게시물', v: RESEARCH_META.scanned + '개' },
+                { k: '선별', v: RESEARCH_META.selected + '개' },
+                { k: '식별 챌린지', v: '9종' },
+                { k: '최고 좋아요', v: '19.7만' },
+              ].map((s, i) => (
+                <Card key={s.k} className="rise-in px-4 py-3" style={{ animationDelay: `${0.08 * (i + 1)}s` }}>
+                  <dt className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">{s.k}</dt>
+                  <dd className="mt-1 text-xl font-bold text-zinc-100">{s.v}</dd>
+                </Card>
+              ))}
+            </dl>
+          </div>
+        </header>
+      );
+    }
+
+    function RankingSection({ onJump }) {
+      return (
+        <section className="mx-auto max-w-6xl px-5 py-14">
+          <SectionTitle
+            eyebrow="한눈에 보기"
+            title="지금 가장 크게 도는 챌린지"
+            desc="검색 결과 노출 빈도 · 참여 규모 · 확산 서사를 종합한 순위입니다."
+          />
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {RANKING.map((r, i) => (
+              <Card
+                key={r.title}
+                className="ig-ring rise-in group relative cursor-pointer overflow-hidden p-6 transition hover:bg-zinc-900"
+                style={{ animationDelay: `${0.1 * i}s` }}
+                onClick={() => onJump(r.cat)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onJump(r.cat); } }}
+              >
+                <div className="text-3xl">{r.medal}</div>
+                <h3 className="mt-3 text-xl font-bold tracking-tight text-zinc-50">{r.title}</h3>
+                <p className="mt-1 text-sm font-medium text-pink-400">{r.period}</p>
+                <p className="mt-4 text-sm leading-relaxed text-zinc-400">{r.reason}</p>
+                <div className="mt-5 flex items-center justify-between border-t border-zinc-800 pt-4">
+                  <span className="text-xs font-semibold text-zinc-300">{r.action}</span>
+                  <span className="text-xs text-zinc-500 transition group-hover:text-pink-400">
+                    게시물 보기 →
+                  </span>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    function SectionTitle({ eyebrow, title, desc }) {
+      return (
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-pink-500">{eyebrow}</p>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight text-zinc-50 sm:text-3xl">{title}</h2>
+          {desc && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">{desc}</p>}
+        </div>
+      );
+    }
+
+    function FilterBar({ active, onChange, sort, onSortChange, counts }) {
+      return (
+        <div className="sticky top-0 z-30 -mx-5 mb-8 border-b border-zinc-800 bg-zinc-950/90 px-5 py-4 backdrop-blur-xl">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="챌린지 필터">
+              {CATEGORIES.map((c) => {
+                const isActive = active === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => onChange(c.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold
+                                transition focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2
+                                focus:ring-offset-zinc-950
+                                ${isActive
+                                  ? 'ig-gradient border-transparent text-white shadow-lg shadow-pink-500/25'
+                                  : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'}`}
+                  >
+                    <span aria-hidden="true">{c.emoji}</span>
+                    {c.label}
+                    <span className={isActive ? 'text-white/70' : 'text-zinc-600'}>{counts[c.id]}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1">
+              {[{ id: 'likes', label: '인기순' }, { id: 'date', label: '최신순' }].map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onSortChange(s.id)}
+                  aria-pressed={sort === s.id}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition
+                              ${sort === s.id ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-100'}`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ReelCard({ post, index, onOpen }) {
+      const [loaded, setLoaded] = useState(false);
+
+      return (
+        <Card
+          className="ig-ring rise-in group relative cursor-pointer overflow-hidden p-0 transition hover:-translate-y-1"
+          style={{ animationDelay: `${Math.min(index, 12) * 0.04}s` }}
+          onClick={() => onOpen(post)}
+          role="button"
+          tabIndex={0}
+          aria-label={`${post.tag} · ${post.account} 게시물 상세 보기`}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(post); } }}
+        >
+          <div className="relative aspect-[9/16] overflow-hidden bg-zinc-800">
+            {!loaded && <div className="absolute inset-0 animate-pulse bg-zinc-800" />}
+            <img
+              src={thumbSrc(post.code)}
+              alt={`${post.account}의 ${post.tag} 챌린지 릴스 썸네일`}
+              loading="lazy"
+              onLoad={() => setLoaded(true)}
+              className={`h-full w-full object-cover transition duration-500 group-hover:scale-105
+                          ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
+
+            {/* 게시일 — 재생 아이콘은 인스타 썸네일에 이미 박혀 있어 중복 표시하지 않는다 */}
+            <div className="absolute right-2.5 top-2.5 rounded-lg bg-black/55 px-2 py-1 text-[10px]
+                            font-bold tabular-nums text-white backdrop-blur">
+              {formatDate(post.date)}
+            </div>
+
+            {post.isNew && (
+              <div className="absolute left-2.5 top-2.5">
+                <Badge tone="fresh">NEW</Badge>
+              </div>
+            )}
+
+            <div className="absolute inset-x-0 bottom-0 p-3.5">
+              <p className="truncate text-[11px] font-bold uppercase tracking-wide text-pink-400">{post.tag}</p>
+              <p className="mt-1 line-clamp-2 text-sm font-semibold leading-snug text-white">{post.caption}</p>
+              <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px]">
+                <span className="truncate font-medium text-zinc-300">@{post.account}</span>
+                <span className="flex shrink-0 items-center gap-1 font-bold text-white">
+                  <svg className="h-3 w-3 text-pink-500" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                  </svg>
+                  {formatLikes(post.likes)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      );
+    }
+
+    function GallerySection({ posts, active, onChange, sort, onSortChange, counts, onOpen }) {
+      return (
+        <section id="gallery" className="mx-auto max-w-6xl px-5 pb-16 pt-4">
+          <SectionTitle
+            eyebrow="갤러리"
+            title="챌린지별 게시물"
+            desc="카드를 누르면 상세 정보가 열리고, 원본 인스타그램 게시물로 바로 이동할 수 있습니다."
+          />
+          <div className="mt-6">
+            <FilterBar
+              active={active} onChange={onChange}
+              sort={sort} onSortChange={onSortChange}
+              counts={counts}
+            />
+
+            {posts.length === 0 ? (
+              <Card className="px-6 py-16 text-center">
+                <p className="text-4xl">🔍</p>
+                <p className="mt-4 font-semibold text-zinc-300">해당 카테고리에 게시물이 없습니다</p>
+                <p className="mt-1 text-sm text-zinc-500">다른 필터를 선택해 보세요.</p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                {posts.map((p, i) => (
+                  <ReelCard key={p.code} post={p} index={i} onOpen={onOpen} />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      );
+    }
+
+    function DetailModal({ post, onClose }) {
+      if (!post) return null;
+      const catLabel = (CATEGORIES.find((c) => c.id === post.cat) || {}).label || '';
+
+      return (
+        <Modal isOpen={!!post} onClose={onClose} title={post.tag} size="md">
+          <div className="grid gap-6 sm:grid-cols-[200px_1fr]">
+            <a href={postUrl(post.code)} target="_blank" rel="noopener noreferrer"
+               className="group relative block overflow-hidden rounded-xl border border-zinc-800">
+              <div className="aspect-[9/16] bg-zinc-800">
+                <img src={thumbSrc(post.code)}
+                     alt={`${post.account}의 ${post.tag} 챌린지 릴스 썸네일`}
+                     className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                <span className="rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-zinc-900">
+                  인스타그램에서 보기
+                </span>
+              </div>
+            </a>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap gap-2">
+                <Badge tone="hot">{catLabel}</Badge>
+                {post.isNew && <Badge tone="fresh">NEW · 신규 트렌드</Badge>}
+              </div>
+
+              <p className="mt-4 text-base font-semibold leading-relaxed text-zinc-100">
+                “{post.caption}”
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{post.note}</p>
+
+              <dl className="mt-6 space-y-3 border-t border-zinc-800 pt-5 text-sm">
+                {[
+                  { k: '계정', v: '@' + post.account },
+                  { k: '게시일', v: formatDate(post.date) },
+                  { k: '좋아요', v: formatLikes(post.likes) },
+                  { k: '게시물 코드', v: post.code },
+                ].map((row) => (
+                  <div key={row.k} className="flex items-center justify-between gap-4">
+                    <dt className="shrink-0 text-zinc-500">{row.k}</dt>
+                    <dd className="truncate font-semibold text-zinc-200">{row.v}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <div className="mt-6 flex flex-wrap gap-2">
+                <Button size="md" onClick={() => window.open(postUrl(post.code), '_blank', 'noopener')}>
+                  게시물 열기
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                          d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
+                </Button>
+                <Button variant="secondary" size="md"
+                        onClick={() => window.open('https://www.instagram.com/' + post.account + '/', '_blank', 'noopener')}>
+                  계정 방문
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      );
+    }
+
+    function InsightSection() {
+      const insights = [
+        { icon: '🎯', title: '지금 잡아야 할 것', body: 'GUAP — 8월 내내 검색 결과를 지배 중이며 아직 소진되지 않았습니다.' },
+        { icon: '🛡️', title: '가장 안전한 선택', body: 'I WANT YOU BACK — 아이돌·일반인 양쪽에서 두 달 넘게 지속. 원곡 서사까지 있어 콘텐츠 확장성이 좋습니다.' },
+        { icon: '🚀', title: '선점 노릴 것', body: "TUIDE 'GRLS' — 8/30 등장한 신규 건으로 아직 게시물 수가 적습니다." },
+        { icon: '📈', title: '성과 1위의 공식', body: '@big__bari 19.7만 — 챌린지 자체보다 「낚시 → 반전」 구성이 주효했습니다.' },
+      ];
+      return (
+        <section className="border-t border-zinc-800 bg-zinc-900/30">
+          <div className="mx-auto max-w-6xl px-5 py-14">
+            <SectionTitle eyebrow="정리" title="리서치 인사이트" />
+            <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              {insights.map((it) => (
+                <Card key={it.title} className="p-6">
+                  <div className="text-2xl">{it.icon}</div>
+                  <h3 className="mt-3 font-bold tracking-tight text-zinc-100">{it.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-400">{it.body}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    function Footer() {
+      return (
+        <footer className="border-t border-zinc-800">
+          <div className="mx-auto max-w-6xl px-5 py-12">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-zinc-300">
+              <span aria-hidden="true">⚠️</span> 데이터 한계
+            </h3>
+            <ul className="mt-4 space-y-2">
+              {LIMITATIONS.map((l, i) => (
+                <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-zinc-500">
+                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-zinc-700" aria-hidden="true" />
+                  {l}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-8 border-t border-zinc-800 pt-6 text-xs text-zinc-600">
+              Instagram 검색 탭 '{RESEARCH_META.keyword}' 키워드 기준 · {RESEARCH_META.collectedAt} 수집 ·
+              썸네일 {RESEARCH_META.selected}종은 <code className="text-zinc-500">thumbs/</code> 폴더에 로컬 저장되어 CDN 만료와 무관하게 유지됩니다.
+            </p>
+          </div>
+        </footer>
+      );
+    }
+
+    // ========================================
+    // 🚀 App
+    // ========================================
+
+    function App() {
+      const [active, setActive] = useState('all');
+      const [sort, setSort] = useState('likes');
+      const [selected, setSelected] = useState(null);
+
+      const counts = useMemo(() => {
+        const c = { all: POSTS.length };
+        CATEGORIES.forEach((cat) => {
+          if (cat.id !== 'all') c[cat.id] = POSTS.filter((p) => p.cat === cat.id).length;
+        });
+        return c;
+      }, []);
+
+      const visible = useMemo(() => {
+        const list = active === 'all' ? [...POSTS] : POSTS.filter((p) => p.cat === active);
+        return list.sort((a, b) =>
+          sort === 'likes'
+            ? (b.likes ?? -1) - (a.likes ?? -1)
+            : b.date.localeCompare(a.date)
+        );
+      }, [active, sort]);
+
+      const jumpTo = useCallback((cat) => {
+        setActive(cat);
+        const el = document.getElementById('gallery');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, []);
+
+      return (
+        <div className="min-h-screen">
+          <Hero />
+          <RankingSection onJump={jumpTo} />
+          <GallerySection
+            posts={visible}
+            active={active}
+            onChange={setActive}
+            sort={sort}
+            onSortChange={setSort}
+            counts={counts}
+            onOpen={setSelected}
+          />
+          <InsightSection />
+          <Footer />
+          <DetailModal post={selected} onClose={() => setSelected(null)} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

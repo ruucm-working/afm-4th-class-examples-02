@@ -1,0 +1,36 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Logs / temp
+*.log
+*.tmp
+
+# Dependencies / build (in case tooling is added later)
+node_modules/
+dist/
+build/
+.env
+.env.local
+
+# Claude Code local settings (contains secrets)
+.claude/settings.local.json
+
+# Python caches (from bundled skill scripts)
+__pycache__/
+*.pyc
+
+# Generated download bundles (duplicates of files already tracked)
+week-2/class/레시피북/1.zip
+
+# Playwright MCP 세션 아티팩트 (스냅샷·콘솔 로그)
+.playwright-mcp/
+
+# 빈 스트레이 파일 (0바이트, 브라우저 자동화 중 생성됨)
+search1.yml

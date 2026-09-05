@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>덮밥 : 레시피 포털</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.9/babel.min.js"></script>
+<script>
+  // 포털 스타일 팔레트 (네이버 그린 계열)
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          brand: { DEFAULT: '#03C75A', dark: '#02B351', light: '#E9F9EF' },
+          ink: { DEFAULT: '#222222', sub: '#666666', mute: '#8E8E8E' },
+          line: '#E5E5E5',
+          canvas: '#F5F6F8',
+        },
+        fontFamily: {
+          sans: ['Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', 'Dotum', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { background-color: #F5F6F8; }
+  /* 실시간 급상승 롤링 */
+  @keyframes roll-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .roll-in { animation: roll-in .3s ease-out; }
+  /* 가로 스크롤 영역의 스크롤바 숨김 */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ========================================
+// 📦 Data — 간장버터 닭고기 덮밥
+// ========================================
+
+const RECIPE = {
+  title: '간장버터 닭고기 덮밥',
+  tagline: '프라이팬 하나로 끝나는 저녁 메뉴. 닭다리살을 간장버터 소스에 조려 밥 위에 올린다.',
+  image: '../../../../week-1/quests/레시피북/images/간장버터-닭고기덮밥-썸네일.jpg',
+  imageAlt: '김이 오르는 간장버터 닭고기 덮밥을 두 손으로 감싸 쥐고 먹는 소녀 - 따뜻한 등불이 켜진 목조 방의 밤 장면',
+  time: '15분',
+  servings: '1~2인분',
+  difficulty: '★☆☆',
+};
+
+const INGREDIENT_GROUPS = [
+  {
+    id: 'main',
+    label: '메인',
+    items: [
+      { name: '닭다리살(또는 닭가슴살)', amount: '250g', note: '한입 크기' },
+      { name: '따뜻한 밥', amount: '1~2공기' },
+      { name: '대파', amount: '1/2대', note: '어슷썰기' },
+      { name: '버터', amount: '1큰술' },
+      { name: '식용유', amount: '1작은술' },
+    ],
+  },
+  {
+    id: 'sauce',
+    label: '소스',
+    hint: '미리 섞어두기',
+    items: [
+      { name: '간장', amount: '2큰술' },
+      { name: '맛술(또는 청주)', amount: '2큰술' },
+      { name: '설탕', amount: '1큰술' },
+      { name: '다진 마늘', amount: '1/2큰술' },
+      { name: '물', amount: '2큰술' },
+    ],
+  },
+  {
+    id: 'finish',
+    label: '마무리',
+    hint: '선택',
+    items: [
+      { name: '반숙 계란', amount: '1개' },
+      { name: '쪽파, 통깨, 후추', amount: '적당량' },
+      { name: '칠리소스', amount: '1작은술', note: '검증됨 — 만들어 본 기록 참고', verified: true },
+    ],
+  },
+];
+
+const STEPS = [
+  { n: 1, title: '손질', minutes: 3, body: '닭고기를 한입 크기로 썰고 후추를 뿌려둔다. 소스 재료를 그릇에 모두 넣고 섞는다.' },
+  { n: 2, title: '굽기', minutes: 5, body: '센 불로 달군 팬에 식용유를 두르고 닭고기를 껍질 쪽부터 올린다. 건드리지 말고 3분간 노릇하게 구운 뒤 뒤집어 2분 더 굽는다.' },
+  { n: 3, title: '조리기', minutes: 4, body: '대파를 넣고 30초 볶다가 소스를 붓는다. 중불에서 3분간 졸이며 국물을 닭고기에 끼얹어준다.' },
+  { n: 4, title: '마무리', minutes: 2, body: '불을 끄고 버터를 넣어 잔열로 녹이며 섞는다. 밥 위에 올리고 남은 소스를 두른다. 반숙 계란, 쪽파, 통깨를 올린다.' },
+];
+
+const TIPS = [
+  { head: '닭고기는 미리 꺼내두기', body: '찬 상태로 구우면 물이 나와 튀기듯 구워지지 않는다.' },
+  { head: '소스는 반드시 미리 섞기', body: '조릴 때 계량하면 타이밍을 놓친다.' },
+  { head: '버터는 불 끄고', body: '끓는 소스에 넣으면 풍미가 날아간다.' },
+  { head: '더 빨리', body: '닭고기 대신 새우나 두부를 쓰면 조리 시간이 3~4분 줄어든다.' },
+  { head: '남은 소스', body: '밥에 비벼 먹거나, 데친 채소에 끼얹어도 좋다.' },
+  { head: '칠리소스 한 스푼', body: '완성 후 밥 위에 살짝 둘러주면 단짠에 매콤함이 붙어 훨씬 맛있다.' },
+];
+
+const PAIRINGS = [
+  { menu: '오이 무침', time: '3분', emoji: '🥒' },
+  { menu: '미역국 (즉석)', time: '5분', emoji: '🍲' },
+  { menu: '김치', time: '0분', emoji: '🥬' },
+];
+
+const LOG = {
+  date: '2026-08-29',
+  title: '칠리소스 추가',
+  verdict: '성공',
+  summary: '마무리 단계에서 칠리소스 1작은술을 밥 위에 둘러 먹어봤는데 맛있었다. 간장버터의 단짠에 매콤함과 새콤함이 더해져 느끼함이 잡힌다.',
+  details: [
+    { k: '넣는 시점', v: '4단계 마무리 후, 그릇에 담고 나서' },
+    { k: '양', v: '1작은술부터. 소스 자체가 이미 짭짤하니 과하면 밸런스가 무너진다.' },
+    { k: '다음에 시도', v: '스리라차, 마요네즈 섞은 칠리마요' },
+  ],
+};
+
+const SHORTCUTS = [
+  { icon: '🧾', label: '재료', href: '#ingredients' },
+  { icon: '🍳', label: '만드는법', href: '#steps' },
+  { icon: '💡', label: '팁', href: '#tips' },
+  { icon: '🥢', label: '곁들임', href: '#pairings' },
+  { icon: '📝', label: '기록', href: '#log' },
+  { icon: '⏱', label: '타이머', href: '#steps' },
+  { icon: '🛒', label: '장보기', href: '#ingredients' },
+  { icon: '⭐', label: '즐겨찾기', href: '#top' },
+];
+
+const KEYWORD_CHIPS = ['간장버터', '닭다리살', '반숙계란', '칠리소스', '대파', '맛술', '덮밥'];
+
+// 실시간 급상승 랭킹 (팁을 검색어처럼 노출)
+const TRENDING = [
+  { word: '칠리소스 한 스푼', state: 'up' },
+  { word: '버터는 불 끄고', state: 'same' },
+  { word: '소스 미리 섞기', state: 'up' },
+  { word: '닭고기 미리 꺼내두기', state: 'down' },
+  { word: '남은 소스 활용', state: 'same' },
+  { word: '새우로 대체', state: 'up' },
+  { word: '반숙 계란 올리기', state: 'down' },
+  { word: '어슷썰기 대파', state: 'same' },
+  { word: '중불 3분 졸이기', state: 'up' },
+  { word: '통깨 마무리', state: 'same' },
+];
+
+// 통합 검색 인덱스
+const SEARCH_INDEX = [
+  ...INGREDIENT_GROUPS.flatMap((g) =>
+    g.items.map((i) => ({ category: '재료 · ' + g.label, title: i.name, body: i.amount + (i.note ? ' · ' + i.note : ''), href: '#ingredients' }))
+  ),
+  ...STEPS.map((s) => ({ category: '만드는 법 · ' + s.n + '단계', title: s.title + ' (' + s.minutes + '분)', body: s.body, href: '#steps' })),
+  ...TIPS.map((t) => ({ category: '팁', title: t.head, body: t.body, href: '#tips' })),
+  ...PAIRINGS.map((p) => ({ category: '곁들임', title: p.menu, body: '준비 시간 ' + p.time, href: '#pairings' })),
+  { category: '만들어 본 기록', title: LOG.title, body: LOG.summary, href: '#log' },
+];
+
+// ========================================
+// 🛠 Utilities
+// ========================================
+
+function formatClock(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+// 검색어와 일치하는 부분을 하이라이트
+function highlight(text, query) {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-transparent font-bold text-brand">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+// 체크 상태를 이 브라우저에 기억 (저장 불가여도 앱은 정상 동작)
+function useStoredSet(key) {
+  const [set, setSet] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (e) { return new Set(); }
+  });
+
+  useEffect(() => {
+    try { window.localStorage.setItem(key, JSON.stringify([...set])); } catch (e) { /* noop */ }
+  }, [key, set]);
+
+  const toggle = useCallback((id) => {
+    setSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  return [set, toggle];
+}
+
+// ========================================
+// 🎨 Design System Components
+// ========================================
+
+function Button({ variant = 'primary', size = 'md', className = '', children, ...props }) {
+  const base = 'inline-flex items-center justify-center gap-1 rounded-md font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed';
+  const variants = {
+    primary: 'bg-brand text-white hover:bg-brand-dark',
+    secondary: 'border border-line bg-white text-ink hover:bg-canvas',
+    ghost: 'text-ink-sub hover:text-brand hover:bg-brand-light',
+  };
+  const sizes = { sm: 'px-2.5 py-1 text-xs', md: 'px-3.5 py-2 text-sm', lg: 'px-5 py-2.5 text-base' };
+  return (
+    <button className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props}>{children}</button>
+  );
+}
+
+function Panel({ id, title, badge, more, className = '', bodyClassName = 'p-4', children }) {
+  return (
+    <section id={id} className={`scroll-mt-24 overflow-hidden rounded-xl border border-line bg-white ${className}`}>
+      {title && (
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[15px] font-bold text-ink">{title}</h2>
+            {badge}
+          </div>
+          {more && <span className="text-xs text-ink-mute">{more}</span>}
+        </div>
+      )}
+      <div className={bodyClassName}>{children}</div>
+    </section>
+  );
+}
+
+function Badge({ tone = 'brand', className = '', children }) {
+  const tones = {
+    brand: 'bg-brand-light text-brand-dark border-brand/20',
+    gray: 'bg-canvas text-ink-sub border-line',
+    red: 'bg-red-50 text-red-500 border-red-200',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${tones[tone]} ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+function Tabs({ tabs, active, onChange }) {
+  return (
+    <div className="flex gap-1 border-b border-line px-2" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          role="tab"
+          aria-selected={active === t.id}
+          onClick={() => onChange(t.id)}
+          className={`relative px-3 py-3 text-sm transition-colors ${
+            active === t.id ? 'font-bold text-ink' : 'text-ink-mute hover:text-ink-sub'
+          }`}
+        >
+          {t.label}
+          {active === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brand" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CheckItem({ checked, onToggle, children }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-canvas">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-brand focus:ring-brand"
+      />
+      <span className={`text-[13px] leading-relaxed ${checked ? 'text-ink-mute line-through' : 'text-ink'}`}>{children}</span>
+    </label>
+  );
+}
+
+// ========================================
+// 🧩 Common / Layout Components
+// ========================================
+
+function TopBar() {
+  return (
+    <div className="hidden border-b border-line bg-white lg:block">
+      <div className="mx-auto flex max-w-[1130px] items-center justify-end gap-4 px-5 py-1.5 text-xs text-ink-sub">
+        <a href="#ingredients" className="hover:text-brand">장보기 목록</a>
+        <a href="#log" className="hover:text-brand">요리 기록</a>
+        <span className="text-line">|</span>
+        <a href="../index.html" className="font-medium text-brand hover:underline">레시피 원본 보기</a>
+      </div>
+    </div>
+  );
+}
+
+function SearchHeader({ query, onSubmit }) {
+  const [text, setText] = useState(query);
+
+  useEffect(() => { setText(query); }, [query]);
+
+  const submit = (e) => {
+    e.preventDefault();
+    onSubmit(text.trim());
+  };
+
+  return (
+    <header id="top" className="border-b border-line bg-white pt-6 pb-5">
+      <div className="mx-auto max-w-[740px] px-5">
+        <a href="#top" className="mb-5 block text-center" aria-label="덮밥 레시피 포털 홈">
+          <span className="text-[34px] font-extrabold tracking-tight text-brand">덮밥</span>
+          <span className="ml-1 align-middle text-sm font-medium text-ink-mute">레시피 포털</span>
+        </a>
+
+        <form onSubmit={submit} role="search" className="flex items-center rounded-xl border-2 border-brand bg-white px-4 py-3">
+          <input
+            type="search"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="재료, 조리 단계, 팁을 검색하세요"
+            aria-label="레시피 검색"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-mute"
+          />
+          {text && (
+            <button type="button" onClick={() => { setText(''); onSubmit(''); }} aria-label="검색어 지우기" className="mr-2 text-ink-mute hover:text-ink">
+              ✕
+            </button>
+          )}
+          <button type="submit" aria-label="검색" className="text-xl text-brand hover:text-brand-dark">🔍</button>
+        </form>
+
+        <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto">
+          {KEYWORD_CHIPS.map((k) => (
+            <button
+              key={k}
+              onClick={() => onSubmit(k)}
+              className="whitespace-nowrap rounded-full border border-line bg-canvas px-3 py-1 text-xs text-ink-sub transition-colors hover:border-brand hover:text-brand"
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Shortcuts() {
+  return (
+    <nav aria-label="바로가기" className="border-b border-line bg-white">
+      <div className="no-scrollbar mx-auto flex max-w-[1130px] gap-1 overflow-x-auto px-5 py-3 sm:justify-center">
+        {SHORTCUTS.map((s) => (
+          <a
+            key={s.label}
+            href={s.href}
+            className="flex w-[76px] shrink-0 flex-col items-center gap-1.5 rounded-lg py-2 transition-colors hover:bg-canvas"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-light text-lg">{s.icon}</span>
+            <span className="text-xs text-ink-sub">{s.label}</span>
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="mt-8 border-t border-line bg-white">
+      <div className="mx-auto max-w-[1130px] px-5 py-8 text-center text-xs text-ink-mute">
+        <div className="mb-3 flex flex-wrap justify-center gap-x-4 gap-y-2">
+          <a href="#ingredients" className="hover:text-ink-sub">재료</a>
+          <a href="#steps" className="hover:text-ink-sub">만드는 법</a>
+          <a href="#tips" className="hover:text-ink-sub">팁</a>
+          <a href="#pairings" className="hover:text-ink-sub">곁들임</a>
+          <a href="#log" className="hover:text-ink-sub">만들어 본 기록</a>
+        </div>
+        <p>week-1 · 레시피북 퀘스트 — 개인 레시피 아카이브</p>
+        <p className="mt-1">체크 표시는 이 브라우저에만 저장됩니다.</p>
+      </div>
+    </footer>
+  );
+}
+
+// ========================================
+// 📄 Content Panels
+// ========================================
+
+function HeroPanel() {
+  return (
+    <Panel bodyClassName="p-0">
+      <div className="relative">
+        <img src={encodeURI(RECIPE.image)} alt={RECIPE.imageAlt} className="h-52 w-full object-cover sm:h-72" />
+        <span className="absolute left-3 top-3 rounded-md bg-brand px-2 py-1 text-[11px] font-bold text-white">오늘의 레시피</span>
+      </div>
+      <div className="p-4">
+        <h1 className="text-xl font-bold text-ink sm:text-2xl">{RECIPE.title}</h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-sub">{RECIPE.tagline}</p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <Badge>⏱ {RECIPE.time}</Badge>
+          <Badge tone="gray">🍽 {RECIPE.servings}</Badge>
+          <Badge tone="gray">난이도 {RECIPE.difficulty}</Badge>
+          <Badge tone="red">🌶 칠리소스 검증</Badge>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function IngredientsPanel() {
+  const [checked, toggle] = useStoredSet('portal:ingredients');
+  const total = INGREDIENT_GROUPS.reduce((sum, g) => sum + g.items.length, 0);
+  const pct = Math.round((checked.size / total) * 100);
+
+  return (
+    <Panel
+      id="ingredients"
+      title="재료"
+      badge={<Badge tone="gray">{checked.size}/{total} 준비</Badge>}
+      more="장보기 목록"
+      bodyClassName="p-0"
+    >
+      <div className="h-1 w-full bg-canvas">
+        <div className="h-full bg-brand transition-all duration-300" style={{ width: pct + '%' }} />
+      </div>
+      <div className="grid gap-x-6 gap-y-4 p-4 sm:grid-cols-2">
+        {INGREDIENT_GROUPS.map((group) => (
+          <div key={group.id} className={group.id === 'finish' ? 'sm:col-span-2' : ''}>
+            <div className="mb-1 flex items-baseline gap-2 border-b border-line pb-1.5">
+              <h3 className="text-[13px] font-bold text-brand-dark">{group.label}</h3>
+              {group.hint && <span className="text-[11px] text-ink-mute">{group.hint}</span>}
+            </div>
+            <ul>
+              {group.items.map((item) => {
+                const id = group.id + ':' + item.name;
+                return (
+                  <li key={id}>
+                    <CheckItem checked={checked.has(id)} onToggle={() => toggle(id)}>
+                      <span className="font-medium">{item.name}</span>{' '}
+                      <span className="text-ink-sub">{item.amount}</span>
+                      {item.note && (
+                        <span className={`block text-[11px] ${item.verified ? 'text-brand-dark' : 'text-ink-mute'}`}>
+                          {item.verified ? '✓ ' : ''}{item.note}
+                        </span>
+                      )}
+                    </CheckItem>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function StepTimer({ seconds, stepLabel }) {
+  const [remaining, setRemaining] = useState(seconds);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(() => setRemaining((r) => Math.max(0, r - 1)), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    if (remaining === 0 && running) setRunning(false);
+  }, [remaining, running]);
+
+  const finished = remaining === 0;
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <span
+        aria-live="polite"
+        aria-label={stepLabel + ' 남은 시간'}
+        className={`font-mono text-sm tabular-nums ${finished ? 'text-brand' : running ? 'text-ink' : 'text-ink-mute'}`}
+      >
+        {formatClock(remaining)}
+      </span>
+      {finished ? (
+        <Badge>완료</Badge>
+      ) : (
+        <Button size="sm" variant={running ? 'secondary' : 'primary'} onClick={() => setRunning((r) => !r)}>
+          {running ? '일시정지' : '타이머 시작'}
+        </Button>
+      )}
+      {(running || remaining !== seconds) && (
+        <Button size="sm" variant="ghost" onClick={() => { setRemaining(seconds); setRunning(false); }} aria-label="타이머 초기화">↺</Button>
+      )}
+    </div>
+  );
+}
+
+function StepsPanel() {
+  const [done, toggle] = useStoredSet('portal:steps');
+
+  return (
+    <Panel
+      id="steps"
+      title="만드는 법"
+      badge={<Badge tone="gray">{done.size}/{STEPS.length} 완료</Badge>}
+      more={'총 ' + RECIPE.time}
+      bodyClassName="divide-y divide-line"
+    >
+      {STEPS.map((step) => {
+        const isDone = done.has(String(step.n));
+        return (
+          <article key={step.n} className="flex gap-3 p-4">
+            <button
+              onClick={() => toggle(String(step.n))}
+              aria-pressed={isDone}
+              aria-label={step.n + '단계 ' + step.title + (isDone ? ' 완료 취소' : ' 완료 표시')}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${
+                isDone ? 'bg-brand text-white' : 'bg-brand-light text-brand-dark hover:bg-brand hover:text-white'
+              }`}
+            >
+              {isDone ? '✓' : step.n}
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className={`text-sm font-bold ${isDone ? 'text-ink-mute line-through' : 'text-ink'}`}>{step.title}</h3>
+                <span className="text-xs text-ink-mute">{step.minutes}분</span>
+              </div>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-sub">{step.body}</p>
+              <StepTimer seconds={step.minutes * 60} stepLabel={step.n + '단계 ' + step.title} />
+            </div>
+          </article>
+        );
+      })}
+    </Panel>
+  );
+}
+
+function TipsPanel() {
+  return (
+    <Panel id="tips" title="팁" more={TIPS.length + '건'} bodyClassName="divide-y divide-line">
+      {TIPS.map((tip, i) => (
+        <div key={tip.head} className="flex gap-3 px-4 py-3">
+          <span className="w-4 shrink-0 text-center text-sm font-bold text-brand">{i + 1}</span>
+          <div>
+            <h3 className="text-[13px] font-bold text-ink">{tip.head}</h3>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-ink-sub">{tip.body}</p>
+          </div>
+        </div>
+      ))}
+    </Panel>
+  );
+}
+
+function PairingsPanel() {
+  return (
+    <Panel id="pairings" title="곁들이면 좋은 것" more="준비 시간순" bodyClassName="p-4">
+      <div className="grid grid-cols-3 gap-3">
+        {PAIRINGS.map((p) => (
+          <div key={p.menu} className="rounded-lg border border-line p-3 text-center transition-colors hover:border-brand">
+            <div className="text-2xl">{p.emoji}</div>
+            <p className="mt-1.5 text-[13px] font-medium text-ink">{p.menu}</p>
+            <p className="text-[11px] text-ink-mute">{p.time}</p>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function LogPanel() {
+  return (
+    <Panel id="log" title="만들어 본 기록" more={LOG.date} bodyClassName="p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-bold text-ink">{LOG.title}</h3>
+        <Badge>✓ {LOG.verdict}</Badge>
+      </div>
+      <p className="mt-2 text-[13px] leading-relaxed text-ink-sub">{LOG.summary}</p>
+      <dl className="mt-3 space-y-1.5 rounded-lg bg-canvas p-3">
+        {LOG.details.map((d) => (
+          <div key={d.k} className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+            <dt className="shrink-0 text-[12px] font-bold text-brand-dark sm:w-20">{d.k}</dt>
+            <dd className="text-[12px] text-ink-sub">{d.v}</dd>
+          </div>
+        ))}
+      </dl>
+    </Panel>
+  );
+}
+
+function SearchResultsPanel({ query, onClear }) {
+  const results = useMemo(() => {
+    const q = query.toLowerCase();
+    return SEARCH_INDEX.filter(
+      (item) => item.title.toLowerCase().includes(q) || item.body.toLowerCase().includes(q) || item.category.toLowerCase().includes(q)
+    );
+  }, [query]);
+
+  return (
+    <Panel
+      title={'‘' + query + '’ 검색결과'}
+      badge={<Badge tone="gray">{results.length}건</Badge>}
+      more={<button onClick={onClear} className="text-xs text-brand hover:underline">전체 보기</button>}
+      bodyClassName={results.length ? 'divide-y divide-line' : 'p-8'}
+    >
+      {results.length === 0 ? (
+        <div className="text-center">
+          <p className="text-sm text-ink-sub">검색 결과가 없습니다.</p>
+          <p className="mt-1 text-xs text-ink-mute">재료명이나 조리 단계 이름으로 다시 검색해 보세요.</p>
+          <Button variant="secondary" size="sm" className="mt-3" onClick={onClear}>전체 레시피 보기</Button>
+        </div>
+      ) : (
+        results.map((r, i) => (
+          <a key={i} href={r.href} className="block px-4 py-3 transition-colors hover:bg-canvas">
+            <p className="text-[11px] text-brand">{r.category}</p>
+            <h3 className="mt-0.5 text-sm font-bold text-ink">{highlight(r.title, query)}</h3>
+            <p className="mt-0.5 line-clamp-2 text-[13px] text-ink-sub">{highlight(r.body, query)}</p>
+          </a>
+        ))
+      )}
+    </Panel>
+  );
+}
+
+// ========================================
+// 📊 Sidebar Widgets
+// ========================================
+
+function TodayBox() {
+  return (
+    <Panel bodyClassName="p-4">
+      <div className="rounded-lg bg-brand-light p-4 text-center">
+        <p className="text-[13px] text-ink-sub">오늘 저녁 뭐 먹지?</p>
+        <p className="mt-1 text-base font-bold text-ink">{RECIPE.title}</p>
+        <a
+          href="#steps"
+          className="mt-3 block rounded-md bg-brand py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-dark"
+        >
+          바로 요리 시작
+        </a>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 divide-x divide-line text-center">
+        <div>
+          <dt className="text-[11px] text-ink-mute">조리</dt>
+          <dd className="text-sm font-bold text-ink">{RECIPE.time}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-ink-mute">분량</dt>
+          <dd className="text-sm font-bold text-ink">{RECIPE.servings}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-ink-mute">난이도</dt>
+          <dd className="text-sm font-bold text-ink">{RECIPE.difficulty}</dd>
+        </div>
+      </dl>
+    </Panel>
+  );
+}
+
+const RANK_MARK = { up: { text: '▲', className: 'text-red-500' }, down: { text: '▼', className: 'text-blue-500' }, same: { text: '–', className: 'text-ink-mute' } };
+
+function TrendingBox({ onPick }) {
+  const [page, setPage] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const pageSize = 5;
+  const pageCount = Math.ceil(TRENDING.length / pageSize);
+
+  useEffect(() => {
+    if (paused) return undefined;
+    const id = setInterval(() => setPage((p) => (p + 1) % pageCount), 4000);
+    return () => clearInterval(id);
+  }, [paused, pageCount]);
+
+  const items = TRENDING.slice(page * pageSize, page * pageSize + pageSize);
+
+  return (
+    <Panel
+      title="실시간 급상승 팁"
+      more={page + 1 + ' / ' + pageCount}
+      bodyClassName="p-2"
+    >
+      <ul
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onFocus={() => setPaused(true)}
+        onBlur={() => setPaused(false)}
+      >
+        {items.map((t, i) => {
+          const rank = page * pageSize + i + 1;
+          const mark = RANK_MARK[t.state];
+          return (
+            <li key={t.word} className="roll-in">
+              <button
+                onClick={() => onPick(t.word)}
+                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-canvas"
+              >
+                <span className={`w-3 text-center text-xs font-bold ${rank <= 3 ? 'text-brand' : 'text-ink-mute'}`}>{rank}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{t.word}</span>
+                <span className={`text-[10px] ${mark.className}`} aria-hidden="true">{mark.text}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="px-2 pb-1 pt-2 text-[11px] text-ink-mute">
+        {paused ? '자동 롤링 일시정지' : '4초마다 자동 롤링'}
+      </p>
+    </Panel>
+  );
+}
+
+function ShoppingBox() {
+  return (
+    <Panel title="장보기 한눈에" more="3개 그룹" bodyClassName="p-3">
+      <ul className="space-y-2">
+        {INGREDIENT_GROUPS.map((g) => (
+          <li key={g.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2">
+            <div>
+              <p className="text-[13px] font-medium text-ink">{g.label}</p>
+              <p className="text-[11px] text-ink-mute">{g.items.map((i) => i.name.split('(')[0]).join(', ')}</p>
+            </div>
+            <span className="shrink-0 text-xs font-bold text-brand">{g.items.length}</span>
+          </li>
+        ))}
+      </ul>
+      <a href="#ingredients" className="mt-3 block rounded-md border border-line py-2 text-center text-[13px] text-ink-sub transition-colors hover:border-brand hover:text-brand">
+        재료 체크하러 가기
+      </a>
+    </Panel>
+  );
+}
+
+// ========================================
+// 🚀 App Component
+// ========================================
+
+const TABS = [
+  { id: 'all', label: '전체' },
+  { id: 'ingredients', label: '재료' },
+  { id: 'steps', label: '만드는 법' },
+  { id: 'tips', label: '팁' },
+];
+
+function App() {
+  const [query, setQuery] = useState('');
+  const [tab, setTab] = useState('all');
+  const mainRef = useRef(null);
+
+  const search = useCallback((q) => {
+    setQuery(q);
+    if (q && mainRef.current) mainRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const showAll = tab === 'all';
+
+  return (
+    <div className="min-h-screen bg-canvas font-sans text-ink antialiased">
+      <TopBar />
+      <SearchHeader query={query} onSubmit={search} />
+      <Shortcuts />
+
+      <main ref={mainRef} className="mx-auto max-w-[1130px] scroll-mt-4 px-5 py-5">
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          {/* 메인 컬럼 */}
+          <div className="space-y-5">
+            {query ? (
+              <SearchResultsPanel query={query} onClear={() => setQuery('')} />
+            ) : (
+              <>
+                <HeroPanel />
+                <div className="overflow-hidden rounded-xl border border-line bg-white">
+                  <Tabs tabs={TABS} active={tab} onChange={setTab} />
+                </div>
+                {(showAll || tab === 'ingredients') && <IngredientsPanel />}
+                {(showAll || tab === 'steps') && <StepsPanel />}
+                {(showAll || tab === 'tips') && <TipsPanel />}
+                {showAll && <PairingsPanel />}
+                {showAll && <LogPanel />}
+              </>
+            )}
+          </div>
+
+          {/* 사이드바 */}
+          <aside className="space-y-5">
+            <TodayBox />
+            <TrendingBox onPick={search} />
+            <ShoppingBox />
+          </aside>
+        </div>
+      </main>
+
+      <Footer />
+    </div>
+  );
+}
+
+// ========================================
+// Rendering
+// ========================================
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
