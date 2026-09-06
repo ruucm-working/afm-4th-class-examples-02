@@ -1,0 +1,17 @@
+{
+  "name": "maeum-shimpyo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "마음쉼표 · AI 심리상담 챗봇 (API 키를 서버에 숨긴 프록시 구성)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --env-file=.env server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

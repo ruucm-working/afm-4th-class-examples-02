@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>마음쉼표 · AI 심리상담</title>
+
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <!-- ⚠️ 모든 CDN 버전 고정. Babel 은 반드시 7.x (8.x 는 인라인 text/babel 미지원) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.9/babel.min.js"></script>
+
+  <style>
+    /* Tailwind 유틸리티로 표현하기 어려운 것만 */
+    @keyframes bubbleIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .bubble-in { animation: bubbleIn 0.28s ease-out both; }
+
+    @keyframes dotPulse {
+      0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+      30%           { opacity: 1;    transform: translateY(-3px); }
+    }
+    .dot { animation: dotPulse 1.2s infinite; }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.3s; }
+
+    /* 채팅 스크롤바 */
+    .chat-scroll::-webkit-scrollbar { width: 8px; }
+    .chat-scroll::-webkit-scrollbar-thumb { background: rgba(120,113,108,0.25); border-radius: 9999px; }
+    .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+
+    /* 커서 깜빡임 (스트리밍 중) */
+    @keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    .caret { animation: caret 1s step-end infinite; }
+  </style>
+</head>
+<body class="bg-stone-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    // ========================================
+    // ⚙️ Config & Constants
+    // ========================================
+
+    // 브라우저는 OpenAI를 직접 호출하지 않는다. API 키는 server.js 에만 존재한다.
+    const CHAT_URL = '/api/chat';
+
+    const STORAGE = {
+      model: 'maeum-model',
+      tone: 'maeum-tone',
+      messages: 'maeum-messages',
+    };
+
+    const MODELS = [
+      { value: 'gpt-4o-mini', label: 'gpt-4o-mini (빠르고 저렴)' },
+      { value: 'gpt-4o', label: 'gpt-4o (더 깊은 대화)' },
+      { value: 'gpt-4.1-mini', label: 'gpt-4.1-mini' },
+    ];
+
+    const TONES = [
+      {
+        value: 'empathy',
+        label: '따뜻한 공감형',
+        hint: '충분히 들어주고 감정을 함께 알아차립니다',
+      },
+      {
+        value: 'calm',
+        label: '차분한 정리형',
+        hint: '엉킨 생각을 함께 구조화합니다',
+      },
+      {
+        value: 'coach',
+        label: '든든한 코치형',
+        hint: '작은 실천 한 걸음을 같이 찾습니다',
+      },
+    ];
+
+    const STARTERS = [
+      '요즘 이유 없이 무기력해요',
+      '사람들 앞에 서면 너무 불안해요',
+      '가까운 사람과 갈등이 있어요',
+      '잠이 잘 오지 않아요',
+    ];
+
+    const WELCOME = {
+      role: 'assistant',
+      content: '안녕하세요, 마음쉼표예요. 여기서는 어떤 이야기든 편하게 꺼내셔도 괜찮아요.\n오늘은 어떤 마음으로 오셨는지, 떠오르는 대로 들려주시겠어요?',
+    };
+
+    // ========================================
+    // 🎨 Design System Components
+    // ========================================
+
+    function Button({ variant = 'primary', size = 'md', className = '', children, ...props }) {
+      const base = 'inline-flex items-center justify-center gap-1.5 font-medium rounded-xl transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
+      const variants = {
+        primary: 'bg-teal-700 text-white hover:bg-teal-800 active:bg-teal-900 shadow-sm',
+        secondary: 'bg-white text-stone-700 border border-stone-300 hover:bg-stone-50 active:bg-stone-100',
+        danger: 'bg-white text-red-600 border border-red-200 hover:bg-red-50',
+        ghost: 'text-stone-600 hover:bg-stone-200/70 active:bg-stone-300/60',
+      };
+      const sizes = {
+        sm: 'text-xs px-2.5 py-1.5',
+        md: 'text-sm px-4 py-2',
+        lg: 'text-base px-5 py-2.5',
+      };
+      return (
+        <button className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props}>
+          {children}
+        </button>
+      );
+    }
+
+    function Input({ label, error, className = '', ...props }) {
+      return (
+        <label className="block">
+          {label && <span className="block mb-1.5 text-sm font-medium text-stone-700">{label}</span>}
+          <input
+            className={`w-full px-3 py-2 text-sm rounded-xl border bg-white text-stone-800 placeholder-stone-400 transition
+              focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500
+              ${error ? 'border-red-400' : 'border-stone-300'} ${className}`}
+            {...props}
+          />
+          {error && <span className="block mt-1 text-xs text-red-600">{error}</span>}
+        </label>
+      );
+    }
+
+    function Select({ label, options, className = '', ...props }) {
+      return (
+        <label className="block">
+          {label && <span className="block mb-1.5 text-sm font-medium text-stone-700">{label}</span>}
+          <select
+            className={`w-full px-3 py-2 text-sm rounded-xl border border-stone-300 bg-white text-stone-800 transition
+              focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 ${className}`}
+            {...props}
+          >
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+      );
+    }
+
+    function Card({ className = '', children }) {
+      return (
+        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200/80 ${className}`}>
+          {children}
+        </div>
+      );
+    }
+
+    function Badge({ tone = 'neutral', className = '', children }) {
+      const tones = {
+        neutral: 'bg-stone-200/80 text-stone-600',
+        teal: 'bg-teal-100 text-teal-800',
+        amber: 'bg-amber-100 text-amber-800',
+      };
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tones[tone]} ${className}`}>
+          {children}
+        </span>
+      );
+    }
+
+    function Modal({ isOpen, onClose, title, size = 'md', children }) {
+      useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKey);
+        document.body.style.overflow = 'hidden';
+        return () => {
+          window.removeEventListener('keydown', onKey);
+          document.body.style.overflow = '';
+        };
+      }, [isOpen, onClose]);
+
+      if (!isOpen) return null;
+
+      const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl' };
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/40 backdrop-blur-sm p-0 sm:p-4"
+          onClick={onClose}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
+          <div
+            className={`w-full ${sizes[size]} bg-white rounded-t-2xl sm:rounded-2xl shadow-xl bubble-in`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200">
+              <h2 className="text-base font-semibold text-stone-800">{title}</h2>
+              <Button variant="ghost" size="sm" onClick={onClose} aria-label="닫기">✕</Button>
+            </div>
+            <div className="px-5 py-4">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================
+    // 🧩 Common Components
+    // ========================================
+
+    function Header({ model, tone, onOpenSettings, onReset }) {
+      return (
+        <header className="shrink-0 bg-white/85 backdrop-blur border-b border-stone-200">
+          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-teal-700 text-white flex items-center justify-center text-lg shrink-0" aria-hidden="true">
+              🌿
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[15px] font-semibold text-stone-800 leading-tight">마음쉼표</h1>
+              <p className="text-xs text-stone-500 truncate">
+                {tone.label} · {model}
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onReset} aria-label="대화 새로 시작">새 대화</Button>
+            <Button variant="secondary" size="sm" onClick={onOpenSettings} aria-label="설정 열기">설정</Button>
+          </div>
+        </header>
+      );
+    }
+
+    function MessageBubble({ role, content, streaming }) {
+      const isUser = role === 'user';
+      return (
+        <div className={`flex gap-2.5 bubble-in ${isUser ? 'justify-end' : 'justify-start'}`}>
+          {!isUser && (
+            <div className="w-8 h-8 shrink-0 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center text-sm" aria-hidden="true">
+              🌿
+            </div>
+          )}
+          <div
+            className={`max-w-[80%] px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words shadow-sm
+              ${isUser
+                ? 'bg-teal-700 text-white rounded-2xl rounded-br-md'
+                : 'bg-white text-stone-800 border border-stone-200 rounded-2xl rounded-bl-md'}`}
+          >
+            {content}
+            {streaming && <span className="caret ml-0.5 text-stone-400">▍</span>}
+          </div>
+        </div>
+      );
+    }
+
+    function TypingIndicator() {
+      return (
+        <div className="flex gap-2.5 bubble-in" aria-live="polite" aria-label="답변 작성 중">
+          <div className="w-8 h-8 shrink-0 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center text-sm" aria-hidden="true">
+            🌿
+          </div>
+          <div className="bg-white border border-stone-200 rounded-2xl rounded-bl-md px-4 py-3.5 shadow-sm flex items-center gap-1.5">
+            <span className="dot w-1.5 h-1.5 rounded-full bg-stone-500 inline-block"></span>
+            <span className="dot w-1.5 h-1.5 rounded-full bg-stone-500 inline-block"></span>
+            <span className="dot w-1.5 h-1.5 rounded-full bg-stone-500 inline-block"></span>
+          </div>
+        </div>
+      );
+    }
+
+    function StarterChips({ onPick, disabled }) {
+      return (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {STARTERS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(s)}
+              className="px-3 py-1.5 text-[13px] rounded-full bg-white border border-stone-300 text-stone-600
+                hover:border-teal-500 hover:text-teal-800 transition disabled:opacity-40
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      );
+    }
+
+    function CrisisNotice() {
+      return (
+        <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[12px] leading-relaxed text-amber-900">
+          <strong className="font-semibold">마음이 많이 힘드시다면</strong> — 자살예방 상담전화 <b>109</b> · 정신건강 상담전화 <b>1577-0199</b> · 응급 시 <b>119</b>.
+          이 앱은 전문 상담을 대체하지 않아요.
+        </div>
+      );
+    }
+
+    function Composer({ value, onChange, onSend, onStop, loading, disabled }) {
+      const taRef = useRef(null);
+
+      // 입력 높이 자동 조절
+      useEffect(() => {
+        const el = taRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+      }, [value]);
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          onSend();
+        }
+      };
+
+      return (
+        <div className="flex items-end gap-2">
+          <textarea
+            ref={taRef}
+            rows={1}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            placeholder="지금 마음에 떠오르는 이야기를 적어 주세요…"
+            aria-label="메시지 입력"
+            className="flex-1 resize-none px-4 py-3 text-[15px] rounded-2xl border border-stone-300 bg-white
+              text-stone-800 placeholder-stone-400 leading-relaxed transition
+              focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 disabled:bg-stone-100"
+          />
+          {loading ? (
+            <Button variant="secondary" size="lg" onClick={onStop} className="h-[46px] shrink-0">멈추기</Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={onSend}
+              disabled={disabled || !value.trim()}
+              className="h-[46px] shrink-0"
+              aria-label="보내기"
+            >
+              보내기
+            </Button>
+          )}
+        </div>
+      );
+    }
+
+    function SettingsModal({ isOpen, onClose, model, setModel, tone, setTone }) {
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="설정">
+          <div className="space-y-4">
+            <p className="text-[11px] leading-relaxed text-stone-500">
+              API 키는 서버에만 보관되며 브라우저로 내려오지 않아요. 대화는 서버를 거쳐 전달됩니다.
+            </p>
+
+            <Select
+              label="모델"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              options={MODELS}
+            />
+
+            <div>
+              <span className="block mb-1.5 text-sm font-medium text-stone-700">상담 스타일</span>
+              <div className="space-y-2">
+                {TONES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setTone(t.value)}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl border transition
+                      ${tone === t.value
+                        ? 'border-teal-600 bg-teal-50 ring-1 ring-teal-600/30'
+                        : 'border-stone-300 bg-white hover:bg-stone-50'}`}
+                    aria-pressed={tone === t.value}
+                  >
+                    <span className="block text-sm font-medium text-stone-800">{t.label}</span>
+                    <span className="block text-xs text-stone-500 mt-0.5">{t.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <Button variant="primary" onClick={onClose}>닫기</Button>
+            </div>
+          </div>
+        </Modal>
+      );
+    }
+
+    // ========================================
+    // 📄 Chat Page (상태 + 비즈니스 로직)
+    // ========================================
+
+    // 이전 버전이 브라우저에 저장해 둔 API 키가 남아 있다면 지운다.
+    try { localStorage.removeItem('maeum-api-key'); } catch (e) {}
+
+    function readStorage(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw === null ? fallback : raw;
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    function ChatPage() {
+      const [model, setModel] = useState(() => readStorage(STORAGE.model, 'gpt-4o-mini'));
+      const [tone, setTone] = useState(() => readStorage(STORAGE.tone, 'empathy'));
+      const [messages, setMessages] = useState(() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORAGE.messages) || 'null');
+          if (Array.isArray(saved) && saved.length > 0) return saved;
+        } catch (e) { /* 저장된 대화가 깨졌으면 무시하고 새로 시작 */ }
+        return [WELCOME];
+      });
+      const [input, setInput] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [streaming, setStreaming] = useState(false);
+      const [error, setError] = useState(null);
+      const [settingsOpen, setSettingsOpen] = useState(false);
+
+      const abortRef = useRef(null);
+      const bottomRef = useRef(null);
+
+      const toneObj = useMemo(
+        () => TONES.find((t) => t.value === tone) || TONES[0],
+        [tone]
+      );
+
+      // 설정 / 대화 영속화
+      useEffect(() => { try { localStorage.setItem(STORAGE.model, model); } catch (e) {} }, [model]);
+      useEffect(() => { try { localStorage.setItem(STORAGE.tone, tone); } catch (e) {} }, [tone]);
+      useEffect(() => {
+        try { localStorage.setItem(STORAGE.messages, JSON.stringify(messages)); } catch (e) {}
+      }, [messages]);
+
+      // 새 메시지마다 아래로 스크롤
+      useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, [messages, loading]);
+
+      // 언마운트 시 진행 중 요청 정리
+      useEffect(() => () => abortRef.current?.abort(), []);
+
+      const stop = useCallback(() => {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setLoading(false);
+        setStreaming(false);
+      }, []);
+
+      const reset = useCallback(() => {
+        stop();
+        setMessages([WELCOME]);
+        setError(null);
+        setInput('');
+      }, [stop]);
+
+      const send = useCallback(async (rawText) => {
+        const text = (rawText ?? input).trim();
+        if (!text || loading) return;
+
+        const nextMessages = [...messages, { role: 'user', content: text }];
+        setMessages(nextMessages);
+        setInput('');
+        setError(null);
+        setLoading(true);
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        try {
+          // 키·시스템 프롬프트는 서버가 붙인다. 여기서는 대화 내용만 보낸다.
+          const res = await fetch(CHAT_URL, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model,
+              tone: toneObj.value,
+              // 컨텍스트 길이 관리를 위해 최근 20턴만 전송
+              messages: nextMessages.slice(-20).map((m) => ({ role: m.role, content: m.content })),
+            }),
+          });
+
+          if (!res.ok) {
+            let message = '';
+            try {
+              const body = await res.json();
+              message = body?.message || '';
+            } catch (e) { /* 본문이 JSON 이 아닐 수 있음 */ }
+            throw new Error(message || `요청에 실패했어요 (${res.status}).`);
+          }
+
+          // 스트리밍 시작: 빈 assistant 메시지를 만들고 조각을 이어 붙인다
+          setStreaming(true);
+          setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+          let acc = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 마지막 조각은 다음 청크와 이어붙임
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const payload = trimmed.slice(5).trim();
+              if (payload === '[DONE]') continue;
+              try {
+                const json = JSON.parse(payload);
+                const delta = json.choices?.[0]?.delta?.content;
+                if (delta) {
+                  acc += delta;
+                  setMessages((prev) => {
+                    const copy = [...prev];
+                    copy[copy.length - 1] = { role: 'assistant', content: acc };
+                    return copy;
+                  });
+                }
+              } catch (e) { /* 불완전한 JSON 조각은 건너뜀 */ }
+            }
+          }
+
+          if (!acc) {
+            setMessages((prev) => prev.slice(0, -1));
+            setError('답변이 오지 않았어요. 다시 한 번 보내 주시겠어요?');
+          }
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            // 사용자가 직접 멈춘 경우: 지금까지 받은 내용은 그대로 둔다
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'assistant' && !last.content) return prev.slice(0, -1);
+              return prev;
+            });
+          } else {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'assistant' && !last.content) return prev.slice(0, -1);
+              return prev;
+            });
+            setError(err.message || '알 수 없는 오류가 발생했어요.');
+          }
+        } finally {
+          abortRef.current = null;
+          setLoading(false);
+          setStreaming(false);
+        }
+      }, [input, loading, messages, model, toneObj]);
+
+      const isEmptyConversation = messages.length <= 1;
+      const showTyping = loading && !streaming;
+
+      return (
+        <div className="h-screen flex flex-col bg-gradient-to-b from-stone-100 to-stone-200/60">
+          <Header
+            model={model}
+            tone={toneObj}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onReset={reset}
+          />
+
+          {/* 대화 영역 */}
+          <main className="flex-1 overflow-y-auto chat-scroll">
+            <div className="max-w-3xl mx-auto px-4 py-5 space-y-3.5">
+              {isEmptyConversation && (
+                <div className="pb-1">
+                  <Card className="p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge tone="teal">비공개 대화</Badge>
+                      <Badge tone="neutral">이 브라우저에만 저장</Badge>
+                    </div>
+                    <p className="text-sm leading-relaxed text-stone-600">
+                      무엇부터 말해야 할지 모르겠다면, 아래 문장 중 하나로 시작해 보셔도 좋아요.
+                    </p>
+                    <StarterChips onPick={(s) => send(s)} disabled={loading} />
+                  </Card>
+                </div>
+              )}
+
+              {messages.map((m, i) => (
+                <MessageBubble
+                  key={i}
+                  role={m.role}
+                  content={m.content}
+                  streaming={streaming && i === messages.length - 1 && m.role === 'assistant'}
+                />
+              ))}
+
+              {showTyping && <TypingIndicator />}
+
+              {error && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-sm text-red-700"
+                >
+                  <span aria-hidden="true">⚠️</span>
+                  <span className="flex-1">{error}</span>
+                  <button
+                    onClick={() => setError(null)}
+                    className="text-red-500 hover:text-red-700 text-xs"
+                    aria-label="오류 닫기"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              <div ref={bottomRef} />
+            </div>
+          </main>
+
+          {/* 입력 영역 */}
+          <footer className="shrink-0 bg-white/85 backdrop-blur border-t border-stone-200">
+            <div className="max-w-3xl mx-auto px-4 py-3 space-y-2.5">
+              <Composer
+                value={input}
+                onChange={setInput}
+                onSend={() => send()}
+                onStop={stop}
+                loading={loading}
+                disabled={loading}
+              />
+              <CrisisNotice />
+              <p className="text-center text-[11px] text-stone-400">
+                Enter 전송 · Shift+Enter 줄바꿈
+              </p>
+            </div>
+          </footer>
+
+          <SettingsModal
+            isOpen={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            model={model}
+            setModel={setModel}
+            tone={tone}
+            setTone={setTone}
+          />
+        </div>
+      );
+    }
+
+    // ========================================
+    // 🚀 App
+    // ========================================
+
+    function App() {
+      return <ChatPage />;
+    }
+
+    // ========================================
+    // Rendering
+    // ========================================
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
