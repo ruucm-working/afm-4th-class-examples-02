@@ -3,7 +3,7 @@
 // ============================================
 //
 // PokeAPI 대신 이 서버가 도감 데이터를 직접 제공한다.
-// 데이터는 아래 POKEDEX 배열에 인메모리로 들고 있으며(우선 10마리),
+// 데이터는 아래 POKEDEX 배열에 인메모리로 들고 있으며(우선 5마리),
 // 클라이언트(index.html)가 바로 렌더링할 수 있는 형태로 가공해서 내려준다.
 
 const express = require('express');
@@ -30,7 +30,7 @@ const STAT_LABELS = ['HP', '공격', '방어', '특수공격', '특수방어', '
 const defaultSprite = (id) =>
   `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 
-// ── 인메모리 데이터: 포켓몬 10마리 ────────────
+// ── 인메모리 데이터: 포켓몬 5마리 ─────────────
 //
 // 포켓몬을 추가하려면 이 배열에 같은 모양의 객체를 하나 더 넣으면 된다.
 //   types : slug 은 index.html 의 TYPE_THEME 키와 일치해야 색이 입혀진다
@@ -73,55 +73,6 @@ let POKEDEX = [
     abilities: [{ name: '정전기', isHidden: false }, { name: '피뢰침', isHidden: true }],
     stats: [35, 55, 40, 50, 50, 90],
     description: '볼에 있는 전기주머니에 전기를 모아둔다. 놀라거나 화가 나면 모아둔 전기를 방전한다.',
-  },
-  {
-    id: 39, name: '몽실핑', nameEn: 'Jigglypuff', genus: '풍선포켓몬',
-    generation: 1, isLegendary: false, isMythical: false,
-    types: ['normal', 'fairy'],
-    height: 0.5, weight: 5.5,
-    abilities: [{ name: '하늘의은총', isHidden: false }, { name: '친구만들기', isHidden: true }],
-    stats: [115, 45, 20, 45, 25, 20],
-    description: '크고 둥근 눈을 흔들며 기분 좋은 자장가를 부른다. 상대가 잠들 때까지 절대 멈추지 않는다.',
-  },
-  {
-    id: 52, name: '동전냥', nameEn: 'Meowth', genus: '고양이포켓몬',
-    generation: 1, isLegendary: false, isMythical: false,
-    types: ['normal'],
-    height: 0.4, weight: 4.2,
-    abilities: [{ name: '주움', isHidden: false }, { name: '근성', isHidden: true }],
-    stats: [40, 45, 35, 40, 40, 90],
-    description: '동전처럼 둥글고 반짝이는 물건을 아주 좋아한다. 밤이 되면 거리를 돌아다니며 주워 모은다.',
-  },
-  {
-    id: 94, name: '그림령', nameEn: 'Gengar', genus: '그림자포켓몬',
-    generation: 1, isLegendary: false, isMythical: false,
-    types: ['ghost', 'poison'],
-    height: 1.5, weight: 40.5,
-    abilities: [{ name: '저주받은바디', isHidden: false }],
-    stats: [60, 65, 60, 130, 75, 110],
-    description: '어두운 곳에 숨어 그림자처럼 따라다닌다. 등 뒤에서 오싹한 한기를 느꼈다면 그림령의 소행이다.',
-  },
-  {
-    id: 130, name: '폭포룡', nameEn: 'Gyarados', genus: '흉포포켓몬',
-    generation: 1, isLegendary: false, isMythical: false,
-    types: ['water', 'flying'],
-    height: 6.5, weight: 235.0,
-    abilities: [{ name: '위협', isHidden: false }, { name: '자기과신', isHidden: true }],
-    stats: [95, 125, 79, 60, 100, 81],
-    description: '한번 난동을 부리기 시작하면 주변이 모두 불타 없어질 때까지 멈추지 않는 난폭한 성격이다.',
-  },
-  {
-    id: 143, name: '꿀잠보', nameEn: 'Snorlax', genus: '잠꾸러기포켓몬',
-    generation: 1, isLegendary: false, isMythical: false,
-    types: ['normal'],
-    height: 2.1, weight: 460.0,
-    abilities: [
-      { name: '옹골참', isHidden: false },
-      { name: '두꺼운지방', isHidden: false },
-      { name: '위주머니', isHidden: true },
-    ],
-    stats: [160, 110, 65, 65, 110, 30],
-    description: '하루에 400킬로그램의 음식을 먹어 치운다. 배가 부르면 그 자리에서 그대로 잠들어 버린다.',
   },
   {
     id: 150, name: '초능왕', nameEn: 'Mewtwo', genus: '유전포켓몬',
