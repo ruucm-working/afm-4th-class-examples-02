@@ -1,0 +1,18 @@
+{
+  "name": "pokemon-company-homepage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "포켓몬 컴퍼니 소개 홈페이지 · 문의폼 내용을 txt 파일로 저장하는 서버",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "pg": "^8.13.1"
+  }
+}
