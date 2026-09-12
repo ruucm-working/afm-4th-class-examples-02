@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LEICA LAB — 라이카 감성 사진 생성기</title>
+
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <!-- ⚠️ 모든 CDN 버전 고정. Babel 은 반드시 7.x (8.x 는 인라인 text/babel 미지원) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.9/babel.min.js"></script>
+
+  <style>
+    :root { color-scheme: dark; }
+    body { background: #0b0b0c; }
+    /* Tailwind 로 표현하기 어려운 애니메이션·스크롤바만 여기에 둔다 */
+    @keyframes shutter { 0% { transform: scaleY(0); } 50% { transform: scaleY(1); } 100% { transform: scaleY(0); } }
+    .animate-shutter { animation: shutter 1.6s ease-in-out infinite; transform-origin: center; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .animate-fade-up { animation: fadeUp .45s ease-out both; }
+    @keyframes grainShift { 0% { transform: translate(0,0) } 25% { transform: translate(-2%,1%) } 50% { transform: translate(1%,-2%) } 75% { transform: translate(2%,2%) } 100% { transform: translate(0,0) } }
+    .grain::after {
+      content: ""; position: absolute; inset: -20%; pointer-events: none; opacity: .16; mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.55'/></svg>");
+      animation: grainShift 1.2s steps(3) infinite;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #141416; }
+    ::-webkit-scrollbar-thumb { background: #2e2e33; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #45454d; }
+  </style>
+</head>
+<body class="bg-[#0b0b0c] text-neutral-100 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // ========================================
+    // ⚛️ React Hooks
+    // ========================================
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    // ========================================
+    // ⚙️ Config
+    // ========================================
+    // API 키는 서버(server.js)의 환경변수에만 있다. 클라이언트는 키를 모른다.
+    const API_BASE_URL = '/api';
+    const STORAGE_KEY_HISTORY = 'leica-lab:history';
+
+    // 프리셋(렌즈·필름·조명·무드)은 서버 /api/presets 에서 받아온다.
+    // 최종 프롬프트는 서버가 조립하며, 아래 함수는 화면에 보여줄 프리뷰용이다.
+    const LEICA_BASE = 'Leica look: exceptional micro-contrast, organic three-dimensional rendering, natural color rendition, smooth tonal gradation, no digital over-sharpening, no HDR, no plastic skin, photorealistic, professional photography';
+
+    // ========================================
+    // 🎨 Design System Components
+    // ========================================
+
+    function Button({ children, variant = 'primary', size = 'md', disabled = false, onClick, type = 'button', className = '', title }) {
+      const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0c] disabled:opacity-40 disabled:cursor-not-allowed';
+      const variants = {
+        primary: 'bg-[#E20612] text-white hover:bg-[#c00510] active:bg-[#a00409] focus-visible:ring-[#E20612] shadow-lg shadow-[#E20612]/20',
+        secondary: 'bg-neutral-800 text-neutral-100 hover:bg-neutral-700 active:bg-neutral-600 focus-visible:ring-neutral-500 border border-neutral-700',
+        ghost: 'bg-transparent text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800/60 focus-visible:ring-neutral-600',
+        danger: 'bg-transparent text-red-400 hover:bg-red-950/50 border border-red-900/60 focus-visible:ring-red-700',
+      };
+      const sizes = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2.5 text-sm', lg: 'px-6 py-3.5 text-base' };
+      return (
+        <button type={type} onClick={onClick} disabled={disabled} title={title}
+          className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}>
+          {children}
+        </button>
+      );
+    }
+
+    function Textarea({ label, value, onChange, placeholder, rows = 3, hint, maxLength }) {
+      return (
+        <div className="space-y-2">
+          {label && (
+            <div className="flex items-baseline justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{label}</label>
+              {maxLength && <span className="text-[10px] tabular-nums text-neutral-600">{value.length}/{maxLength}</span>}
+            </div>
+          )}
+          <textarea
+            value={value} rows={rows} placeholder={placeholder} maxLength={maxLength}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full resize-y rounded-lg border border-neutral-800 bg-neutral-900/80 px-3.5 py-3 text-sm leading-relaxed text-neutral-100 placeholder-neutral-600 transition-colors focus:border-[#E20612]/70 focus:outline-none focus:ring-1 focus:ring-[#E20612]/40"
+          />
+          {hint && <p className="text-[11px] leading-relaxed text-neutral-500">{hint}</p>}
+        </div>
+      );
+    }
+
+    function Input({ label, type = 'text', value, onChange, placeholder, hint }) {
+      return (
+        <div className="space-y-2">
+          {label && <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400">{label}</label>}
+          <input
+            type={type} value={value} placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-lg border border-neutral-800 bg-neutral-900/80 px-3.5 py-2.5 text-sm text-neutral-100 placeholder-neutral-600 transition-colors focus:border-[#E20612]/70 focus:outline-none focus:ring-1 focus:ring-[#E20612]/40"
+          />
+          {hint && <p className="text-[11px] leading-relaxed text-neutral-500">{hint}</p>}
+        </div>
+      );
+    }
+
+    function Chip({ active, onClick, children, sub, disabled }) {
+      return (
+        <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active}
+          className={`group rounded-lg border px-3 py-2 text-left transition-all duration-150 disabled:opacity-40 ${
+            active
+              ? 'border-[#E20612] bg-[#E20612]/10 shadow-[0_0_0_1px_rgba(226,6,18,0.35)]'
+              : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-600 hover:bg-neutral-800/60'
+          }`}>
+          <span className={`block text-xs font-medium leading-tight ${active ? 'text-white' : 'text-neutral-300'}`}>{children}</span>
+          {sub && <span className={`mt-0.5 block text-[10px] leading-tight ${active ? 'text-[#ff8a90]' : 'text-neutral-600'}`}>{sub}</span>}
+        </button>
+      );
+    }
+
+    function Card({ children, className = '' }) {
+      return (
+        <div className={`rounded-xl border border-neutral-800/80 bg-neutral-900/40 p-5 backdrop-blur-sm ${className}`}>
+          {children}
+        </div>
+      );
+    }
+
+    function SectionLabel({ children, right }) {
+      return (
+        <div className="mb-2.5 flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-400">{children}</h3>
+          {right}
+        </div>
+      );
+    }
+
+    function Badge({ children, tone = 'neutral' }) {
+      const tones = {
+        neutral: 'bg-neutral-800 text-neutral-300 border-neutral-700',
+        red: 'bg-[#E20612]/15 text-[#ff7d84] border-[#E20612]/40',
+        green: 'bg-emerald-950 text-emerald-300 border-emerald-800',
+        amber: 'bg-amber-950 text-amber-300 border-amber-800',
+      };
+      return (
+        <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-medium tracking-wide ${tones[tone]}`}>
+          {children}
+        </span>
+      );
+    }
+
+    function Modal({ isOpen, onClose, title, children, size = 'md' }) {
+      useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', onKey);
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+      }, [isOpen, onClose]);
+
+      if (!isOpen) return null;
+      const sizes = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-5xl', xl: 'max-w-7xl' };
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-label={title}>
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={onClose} />
+          <div className={`relative z-10 w-full ${sizes[size]} max-h-[92vh] overflow-y-auto rounded-xl border border-neutral-800 bg-[#111113] shadow-2xl animate-fade-up`}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-800 bg-[#111113]/95 px-5 py-3.5 backdrop-blur">
+              <h2 className="text-sm font-semibold tracking-wide text-neutral-100">{title}</h2>
+              <button onClick={onClose} aria-label="닫기"
+                className="rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-100">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-5">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    function ShutterLoader({ label }) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-4 py-16">
+          <div className="relative h-14 w-14">
+            <div className="absolute inset-0 rounded-full border-2 border-neutral-800" />
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-[#E20612]" />
+            <div className="absolute inset-[30%] animate-shutter rounded-full bg-[#E20612]/80" />
+          </div>
+          <p className="text-xs uppercase tracking-widest text-neutral-500">{label}</p>
+        </div>
+      );
+    }
+
+    // ========================================
+    // 🛠 Helpers & Hooks
+    // ========================================
+
+    function loadJSON(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch { return fallback; }
+    }
+
+    function saveJSON(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota 초과 무시 */ }
+    }
+
+    function pick(list, id) {
+      return (list || []).find((item) => item.id === id);
+    }
+
+    // 서버 composePrompt() 와 같은 순서로 조립한 프리뷰 문자열
+    function previewPrompt(state, presets) {
+      if (!presets) return '';
+      return [
+        state.scene.trim(),
+        pick(presets.moods, state.mood)?.prompt,
+        pick(presets.lights, state.light)?.prompt,
+        pick(presets.lenses, state.lens)?.prompt,
+        pick(presets.films, state.film)?.prompt,
+        LEICA_BASE,
+      ].filter(Boolean).join(', ');
+    }
+
+    async function apiRequest(endpoint, options = {}) {
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+        ...options,
+      });
+      let payload = null;
+      try { payload = await res.json(); } catch { /* 비 JSON 응답 */ }
+      if (!res.ok || payload?.success === false) {
+        throw new Error(payload?.message || `요청 실패 (${res.status})`);
+      }
+      return payload.data;
+    }
+
+    async function downloadImage(url, filename) {
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
+      } catch {
+        window.open(url, '_blank', 'noopener');
+      }
+    }
+
+    function useCopy() {
+      const [copied, setCopied] = useState(false);
+      const timer = useRef(null);
+      const copy = useCallback(async (text) => {
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        setCopied(true);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1600);
+      }, []);
+      useEffect(() => () => clearTimeout(timer.current), []);
+      return { copied, copy };
+    }
+
+    // ========================================
+    // 🧩 Common / Layout Components
+    // ========================================
+
+    function Header({ health, historyCount, onOpenHistory, onOpenAbout }) {
+      return (
+        <header className="sticky top-0 z-40 border-b border-neutral-800/80 bg-[#0b0b0c]/85 backdrop-blur-md">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E20612] shadow-lg shadow-[#E20612]/30">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white">
+                  <circle cx="12" cy="13" r="3.5" />
+                  <path d="M3 8.5h3l1.5-2.5h9L18 8.5h3v10H3v-10z" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-sm font-bold tracking-[0.2em] text-white">LEICA LAB</h1>
+                <p className="text-[10px] tracking-wide text-neutral-500">라이카로 찍은 듯한 사진 생성기</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {health && !health.keyConfigured && <Badge tone="amber">서버 키 미설정</Badge>}
+              <Button variant="ghost" size="sm" onClick={onOpenHistory} title="생성 히스토리">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <circle cx="10" cy="10" r="7.5" /><path d="M10 5.5V10l3 2" strokeLinecap="round" />
+                </svg>
+                <span className="hidden sm:inline">히스토리</span>
+                {historyCount > 0 && <span className="rounded bg-neutral-800 px-1.5 text-[10px] tabular-nums">{historyCount}</span>}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onOpenAbout} title="서버 상태">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <circle cx="10" cy="10" r="7.5" /><path d="M10 9v4.5M10 6.5v.01" strokeLinecap="round" />
+                </svg>
+                <span className="hidden sm:inline">정보</span>
+              </Button>
+            </div>
+          </div>
+        </header>
+      );
+    }
+
+    function Footer() {
+      return (
+        <footer className="mt-16 border-t border-neutral-900 py-8 text-center">
+          <p className="text-[11px] text-neutral-600">fal.ai FLUX 로 생성된 이미지입니다 · 실제 Leica 사진이 아닙니다</p>
+          <p className="mt-1 text-[10px] text-neutral-700">week-3 quest · React(CDN) + Express · API 키는 서버 환경변수</p>
+        </footer>
+      );
+    }
+
+    // ========================================
+    // 📄 Control Panel
+    // ========================================
+
+    function ControlPanel({ state, setState, presets, onGenerate, loading }) {
+      const set = (patch) => setState((prev) => ({ ...prev, ...patch }));
+      const [showPrompt, setShowPrompt] = useState(false);
+      const finalPrompt = useMemo(() => previewPrompt(state, presets), [state, presets]);
+      const { copied, copy } = useCopy();
+
+      const shuffleIdea = () => {
+        const pool = (presets?.ideas || []).filter((s) => s !== state.scene);
+        if (pool.length) set({ scene: pool[Math.floor(Math.random() * pool.length)] });
+      };
+
+      return (
+        <div className="space-y-5">
+          <Card>
+            <Textarea
+              label="장면 묘사"
+              value={state.scene}
+              onChange={(v) => set({ scene: v })}
+              placeholder="예: 비 온 뒤 을지로 골목, 우산을 접는 노인"
+              rows={3}
+              maxLength={400}
+              hint="누가 · 어디서 · 무엇을 하는지 한 문장으로 쓰면 결과가 좋아집니다."
+            />
+            <div className="mt-3 flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={shuffleIdea}>
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <path d="M3 6h3l8 8h3M17 4l2 2-2 2M3 14h3l2-2M14 6l2-2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                아이디어 셔플
+              </Button>
+              {state.scene && <Button variant="ghost" size="sm" onClick={() => set({ scene: '' })}>지우기</Button>}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionLabel>렌즈</SectionLabel>
+            <div className="grid grid-cols-2 gap-2">
+              {presets.lenses.map((l) => (
+                <Chip key={l.id} active={state.lens === l.id} sub={l.sub} onClick={() => set({ lens: l.id })}>{l.label}</Chip>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionLabel>필름 / 컬러</SectionLabel>
+            <div className="grid grid-cols-2 gap-2">
+              {presets.films.map((f) => (
+                <Chip key={f.id} active={state.film === f.id} sub={f.sub} onClick={() => set({ film: f.id })}>{f.label}</Chip>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionLabel>빛 · 시간대</SectionLabel>
+            <div className="grid grid-cols-3 gap-2">
+              {presets.lights.map((l) => (
+                <Chip key={l.id} active={state.light === l.id} onClick={() => set({ light: l.id })}>{l.label}</Chip>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionLabel>촬영 무드</SectionLabel>
+            <div className="grid grid-cols-3 gap-2">
+              {presets.moods.map((m) => (
+                <Chip key={m.id} active={state.mood === m.id} onClick={() => set({ mood: m.id })}>{m.label}</Chip>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionLabel>화면 비율</SectionLabel>
+            <div className="grid grid-cols-4 gap-2">
+              {presets.ratios.map((r) => (
+                <Chip key={r.id} active={state.ratio === r.id} sub={r.sub} onClick={() => set({ ratio: r.id })}>{r.label}</Chip>
+              ))}
+            </div>
+
+            <div className="mt-4 border-t border-neutral-800 pt-4">
+              <SectionLabel>모델</SectionLabel>
+              <div className="grid grid-cols-2 gap-2">
+                {presets.models.map((m) => (
+                  <Chip key={m.id} active={state.model === m.id} sub={m.desc} onClick={() => set({ model: m.id })}>{m.label}</Chip>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-neutral-800 pt-4">
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400">장수</label>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4].map((n) => (
+                    <button key={n} type="button" onClick={() => set({ count: n })} aria-pressed={state.count === n}
+                      className={`h-9 flex-1 rounded-lg border text-xs font-medium tabular-nums transition-colors ${
+                        state.count === n
+                          ? 'border-[#E20612] bg-[#E20612]/10 text-white'
+                          : 'border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:border-neutral-600'
+                      }`}>{n}</button>
+                  ))}
+                </div>
+              </div>
+              <Input label="시드 (선택)" value={state.seed} onChange={(v) => set({ seed: v.replace(/[^0-9]/g, '') })} placeholder="비우면 랜덤" />
+            </div>
+          </Card>
+
+          <Card className="!p-4">
+            <button type="button" onClick={() => setShowPrompt((v) => !v)} className="flex w-full items-center justify-between text-left">
+              <span className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-400">최종 프롬프트</span>
+              <svg className={`h-4 w-4 text-neutral-500 transition-transform ${showPrompt ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            {showPrompt && (
+              <div className="mt-3 space-y-2">
+                <p className="max-h-44 overflow-y-auto rounded-lg bg-black/50 p-3 font-mono text-[11px] leading-relaxed text-neutral-400">
+                  {finalPrompt || <span className="text-neutral-600">장면을 입력하면 프롬프트가 조립됩니다.</span>}
+                </p>
+                <Button variant="ghost" size="sm" onClick={() => copy(finalPrompt)} disabled={!finalPrompt}>
+                  {copied ? '복사됨 ✓' : '프롬프트 복사'}
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          <Button size="lg" className="w-full" onClick={onGenerate} disabled={loading || !state.scene.trim()}>
+            {loading ? '현상 중…' : (
+              <>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="13" r="3.5" />
+                  <path d="M3 8.5h3l1.5-2.5h9L18 8.5h3v10H3v-10z" strokeLinejoin="round" />
+                </svg>
+                셔터 누르기
+              </>
+            )}
+          </Button>
+        </div>
+      );
+    }
+
+    // ========================================
+    // 📄 Gallery
+    // ========================================
+
+    function PhotoTile({ shot, onOpen }) {
+      const [loaded, setLoaded] = useState(false);
+      return (
+        <button type="button" onClick={() => onOpen(shot)}
+          className="group relative block w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 text-left transition-all hover:border-neutral-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E20612]">
+          {!loaded && <div className="aspect-[3/2] w-full animate-pulse bg-neutral-800/60" />}
+          <img
+            src={shot.url} alt={shot.scene} loading="lazy" onLoad={() => setLoaded(true)}
+            className={`w-full transition-all duration-500 group-hover:scale-[1.03] ${loaded ? 'block opacity-100' : 'hidden opacity-0'}`}
+          />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+            <p className="line-clamp-2 text-[11px] leading-snug text-neutral-200">{shot.scene}</p>
+            <p className="mt-1 text-[10px] text-neutral-400">{shot.lensLabel} · {shot.filmLabel}</p>
+          </div>
+        </button>
+      );
+    }
+
+    function Gallery({ shots, loading, error, onOpen, onRetry }) {
+      if (loading) {
+        return (
+          <Card className="grain relative overflow-hidden">
+            <ShutterLoader label="필름을 현상하는 중" />
+          </Card>
+        );
+      }
+
+      if (error) {
+        return (
+          <Card className="border-red-900/50 bg-red-950/20">
+            <div className="flex items-start gap-3">
+              <svg className="mt-0.5 h-5 w-5 shrink-0 text-red-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <circle cx="10" cy="10" r="7.5" /><path d="M10 6.5v4.5M10 13.5v.01" strokeLinecap="round" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-200">생성에 실패했습니다</p>
+                <p className="mt-1 text-xs leading-relaxed text-red-300/80">{error}</p>
+                <div className="mt-3"><Button variant="secondary" size="sm" onClick={onRetry}>다시 시도</Button></div>
+              </div>
+            </div>
+          </Card>
+        );
+      }
+
+      if (!shots.length) {
+        return (
+          <Card className="flex min-h-[420px] flex-col items-center justify-center border-dashed text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900">
+              <svg className="h-7 w-7 text-neutral-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="13" r="3.5" />
+                <path d="M3 8.5h3l1.5-2.5h9L18 8.5h3v10H3v-10z" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-neutral-300">아직 찍은 사진이 없습니다</p>
+            <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-neutral-600">
+              왼쪽에서 장면을 묘사하고 렌즈·필름을 고른 뒤 셔터를 눌러 보세요.
+            </p>
+          </Card>
+        );
+      }
+
+      return (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {shots.map((shot) => (
+            <div key={shot.id} className="animate-fade-up">
+              <PhotoTile shot={shot} onOpen={onOpen} />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // ========================================
+    // 📄 Viewer Modal
+    // ========================================
+
+    function ViewerModal({ shot, onClose, onReuse }) {
+      const { copied, copy } = useCopy();
+      if (!shot) return null;
+
+      const meta = [
+        ['렌즈', shot.lensLabel],
+        ['필름', shot.filmLabel],
+        ['빛', shot.lightLabel],
+        ['무드', shot.moodLabel],
+        ['비율', shot.settings?.ratio],
+        ['모델', shot.modelLabel],
+        ['시드', String(shot.seed ?? '—')],
+      ];
+
+      return (
+        <Modal isOpen={!!shot} onClose={onClose} title="사진 보기" size="xl">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="overflow-hidden rounded-lg border border-neutral-800 bg-black">
+              <img src={shot.url} alt={shot.scene} className="max-h-[70vh] w-full object-contain" />
+            </div>
+            <div className="space-y-4">
+              <div>
+                <SectionLabel>장면</SectionLabel>
+                <p className="text-sm leading-relaxed text-neutral-200">{shot.scene}</p>
+              </div>
+              <div>
+                <SectionLabel>촬영 정보</SectionLabel>
+                <dl className="space-y-1.5">
+                  {meta.map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-3 text-xs">
+                      <dt className="shrink-0 text-neutral-500">{k}</dt>
+                      <dd className="truncate text-right text-neutral-300">{v || '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+              <div className="space-y-2 border-t border-neutral-800 pt-4">
+                <Button className="w-full" onClick={() => downloadImage(shot.url, `leica-lab-${shot.id}.jpg`)}>
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
+                    <path d="M10 3v9m0 0l-3.5-3.5M10 12l3.5-3.5M3.5 15.5h13" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  이미지 저장
+                </Button>
+                <Button variant="secondary" className="w-full" onClick={() => copy(shot.prompt)}>
+                  {copied ? '프롬프트 복사됨 ✓' : '프롬프트 복사'}
+                </Button>
+                <Button variant="ghost" className="w-full" onClick={() => { onReuse(shot); onClose(); }}>
+                  이 설정으로 다시 찍기
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      );
+    }
+
+    // ========================================
+    // 📄 History Modal
+    // ========================================
+
+    function HistoryModal({ isOpen, onClose, history, onOpen, onClear }) {
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`생성 히스토리 (${history.length})`} size="lg">
+          {history.length === 0 ? (
+            <p className="py-12 text-center text-sm text-neutral-500">아직 기록이 없습니다.</p>
+          ) : (
+            <>
+              <p className="mb-4 text-[11px] leading-relaxed text-neutral-500">
+                이미지 주소는 fal.ai 서버에 저장된 링크입니다. 시간이 지나면 만료될 수 있으니 마음에 드는 사진은 저장해 두세요.
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {history.map((shot) => (
+                  <button key={shot.id} type="button" onClick={() => { onOpen(shot); onClose(); }}
+                    className="group overflow-hidden rounded-lg border border-neutral-800 transition-colors hover:border-neutral-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E20612]">
+                    <img src={shot.url} alt={shot.scene} loading="lazy" className="aspect-square w-full object-cover transition-transform group-hover:scale-105" />
+                    <p className="truncate px-2 py-1.5 text-left text-[10px] text-neutral-500">{shot.scene}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 border-t border-neutral-800 pt-4">
+                <Button variant="danger" size="sm" onClick={onClear}>히스토리 비우기</Button>
+              </div>
+            </>
+          )}
+        </Modal>
+      );
+    }
+
+    // ========================================
+    // 📄 About / 서버 상태 Modal
+    // ========================================
+
+    function AboutModal({ isOpen, onClose, health }) {
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="서버 상태" size="sm">
+          <div className="space-y-4">
+            <dl className="space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <dt className="text-neutral-500">서버 연결</dt>
+                <dd>{health ? <Badge tone="green">정상</Badge> : <Badge tone="amber">확인 불가</Badge>}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="text-neutral-500">FAL_KEY 환경변수</dt>
+                <dd>{health?.keyConfigured ? <Badge tone="green">설정됨</Badge> : <Badge tone="amber">미설정</Badge>}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="text-neutral-500">이번 세션 생성 수</dt>
+                <dd className="tabular-nums text-neutral-300">{health?.generatedCount ?? '—'}</dd>
+              </div>
+            </dl>
+
+            <div className="rounded-lg border border-neutral-800 bg-black/40 p-3">
+              <p className="text-[11px] leading-relaxed text-neutral-400">
+                API 키는 브라우저에 전혀 노출되지 않습니다. 이미지 생성 요청은 <code className="text-neutral-200">/api/generate</code> 로 가고,
+                서버가 환경변수 <code className="text-neutral-200">FAL_KEY</code> 로 fal.ai 를 대신 호출합니다.
+              </p>
+            </div>
+
+            {health && !health.keyConfigured && (
+              <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3">
+                <p className="text-[11px] leading-relaxed text-amber-200/80">
+                  서버에 키가 없습니다. <code>.env.example</code> 을 <code>.env</code> 로 복사하고 <code>FAL_KEY</code> 값을 채운 뒤 서버를 다시 시작하세요.
+                </p>
+              </div>
+            )}
+          </div>
+        </Modal>
+      );
+    }
+
+    // ========================================
+    // 🚀 App
+    // ========================================
+
+    function App() {
+      const [presets, setPresets] = useState(null);
+      const [bootError, setBootError] = useState(null);
+      const [health, setHealth] = useState(null);
+
+      const [state, setState] = useState({
+        scene: '비 온 뒤 서울 을지로 골목, 우산을 접는 노인',
+        lens: 'summicron35',
+        film: 'portra400',
+        light: 'golden',
+        mood: 'street',
+        ratio: '3:2',
+        model: 'fal-ai/flux/dev',
+        count: 2,
+        seed: '',
+      });
+
+      const [shots, setShots] = useState([]);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [viewing, setViewing] = useState(null);
+      const [showHistory, setShowHistory] = useState(false);
+      const [showAbout, setShowAbout] = useState(false);
+      const [history, setHistory] = useState(() => loadJSON(STORAGE_KEY_HISTORY, []));
+
+      // 프리셋 · 서버 상태 부팅 로드
+      useEffect(() => {
+        let alive = true;
+        apiRequest('/presets')
+          .then((data) => { if (alive) setPresets(data); })
+          .catch((e) => { if (alive) setBootError(e.message); });
+        apiRequest('/health')
+          .then((data) => { if (alive) setHealth(data); })
+          .catch(() => { /* 상태 조회 실패는 치명적이지 않다 */ });
+        return () => { alive = false; };
+      }, []);
+
+      useEffect(() => { saveJSON(STORAGE_KEY_HISTORY, history); }, [history]);
+
+      const handleGenerate = useCallback(async () => {
+        if (!state.scene.trim()) return;
+        setLoading(true);
+        setError(null);
+        try {
+          const data = await apiRequest('/generate', {
+            method: 'POST',
+            body: JSON.stringify({
+              scene: state.scene,
+              lens: state.lens,
+              film: state.film,
+              light: state.light,
+              mood: state.mood,
+              ratio: state.ratio,
+              model: state.model,
+              count: state.count,
+              seed: state.seed,
+            }),
+          });
+          setShots(data.shots);
+          setHistory((prev) => [...data.shots, ...prev].slice(0, 36));
+          apiRequest('/health').then(setHealth).catch(() => {});
+        } catch (e) {
+          setError(e.message || '알 수 없는 오류가 발생했습니다.');
+        } finally {
+          setLoading(false);
+        }
+      }, [state]);
+
+      const handleReuse = useCallback((shot) => {
+        setState((prev) => ({ ...prev, scene: shot.scene, ...(shot.settings || {}) }));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, []);
+
+      // ── 부팅 상태 처리 ──
+      if (bootError) {
+        return (
+          <div className="flex min-h-screen items-center justify-center p-6">
+            <Card className="max-w-md border-red-900/50 bg-red-950/20 text-center">
+              <p className="text-sm font-medium text-red-200">서버에 연결할 수 없습니다</p>
+              <p className="mt-2 text-xs leading-relaxed text-red-300/80">{bootError}</p>
+              <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
+                터미널에서 <code className="text-neutral-300">node server.js</code> 를 실행한 뒤
+                <code className="text-neutral-300"> http://localhost:3000</code> 으로 접속했는지 확인해 주세요.
+                (index.html 파일을 직접 열면 동작하지 않습니다.)
+              </p>
+            </Card>
+          </div>
+        );
+      }
+
+      if (!presets) {
+        return (
+          <div className="flex min-h-screen items-center justify-center">
+            <ShutterLoader label="카메라를 준비하는 중" />
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen">
+          <Header
+            health={health}
+            historyCount={history.length}
+            onOpenHistory={() => setShowHistory(true)}
+            onOpenAbout={() => setShowAbout(true)}
+          />
+
+          <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8">
+            <div className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)] xl:grid-cols-[420px_minmax(0,1fr)]">
+              <div className="lg:sticky lg:top-[72px] lg:max-h-[calc(100vh-96px)] lg:overflow-y-auto lg:pr-2">
+                <ControlPanel state={state} setState={setState} presets={presets} onGenerate={handleGenerate} loading={loading} />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-400">현상된 사진</h2>
+                    {shots.length > 0 && <Badge tone="red">{shots.length}장</Badge>}
+                  </div>
+                  {shots.length > 0 && !loading && (
+                    <Button variant="ghost" size="sm" onClick={handleGenerate}>같은 설정으로 한 번 더</Button>
+                  )}
+                </div>
+                <Gallery shots={shots} loading={loading} error={error} onOpen={setViewing} onRetry={handleGenerate} />
+              </div>
+            </div>
+
+            <Footer />
+          </main>
+
+          <ViewerModal shot={viewing} onClose={() => setViewing(null)} onReuse={handleReuse} />
+          <HistoryModal
+            isOpen={showHistory} onClose={() => setShowHistory(false)}
+            history={history} onOpen={setViewing} onClear={() => { setHistory([]); setShowHistory(false); }}
+          />
+          <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} health={health} />
+        </div>
+      );
+    }
+
+    // ========================================
+    // Rendering
+    // ========================================
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

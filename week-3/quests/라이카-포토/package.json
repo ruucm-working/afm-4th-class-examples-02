@@ -1,0 +1,17 @@
+{
+  "name": "leica-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "라이카 감성 사진 생성기 · fal.ai FLUX 를 서버에서 프록시한다",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
