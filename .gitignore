@@ -34,3 +34,12 @@ week-2/class/레시피북/1.zip
 
 # 빈 스트레이 파일 (0바이트, 브라우저 자동화 중 생성됨)
 search1.yml
+
+# 루트에 떨어진 스크린샷 (어디에서도 참조되지 않음)
+detail.png
+
+# 유튜브 원본 영상 (yt-dlp 다운로드) - 문서·자막만 추적한다
+week-*/class/yt-dlp/**/*.mp4
+week-*/class/yt-dlp/**/*.webm
+week-*/class/yt-dlp/**/*.m4a
+week-*/class/yt-dlp/**/*.mp3
