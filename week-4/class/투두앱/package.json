@@ -1,0 +1,17 @@
+{
+  "name": "todo-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "간단한 투두앱 · Express + Supabase(PostgreSQL) 단일 서버",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.13.1"
+  }
+}
