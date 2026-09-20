@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>실시간 밸런스 게임</title>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.9/babel.min.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-violet-100 via-white to-amber-100 text-slate-800">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    const POLL_MS = 3000;
+
+    // 이 브라우저의 익명 투표자 id (한 질문에 한 표)
+    function getVoterId() {
+      try {
+        let id = localStorage.getItem('balance-voter-id');
+        if (!id) {
+          id = crypto.randomUUID();
+          localStorage.setItem('balance-voter-id', id);
+        }
+        return id;
+      } catch {
+        return window.__voterId || (window.__voterId = crypto.randomUUID());
+      }
+    }
+    const voterId = getVoterId();
+
+    async function api(url, options) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) throw new Error(json.message || '요청에 실패했어요');
+      return json.data;
+    }
+
+    function Side({ label, text, votes, percent, picked, revealed, color, onClick }) {
+      const colors = {
+        A: { bg: 'bg-rose-400', ring: 'ring-rose-500', soft: 'bg-rose-50' },
+        B: { bg: 'bg-sky-400', ring: 'ring-sky-500', soft: 'bg-sky-50' },
+      }[color];
+      return (
+        <button
+          onClick={onClick}
+          className={`relative flex-1 overflow-hidden rounded-2xl p-5 text-left transition active:scale-95 ${colors.soft}
+            ${picked ? `ring-4 ${colors.ring}` : 'hover:ring-2 hover:ring-slate-300'}`}
+        >
+          {revealed && (
+            <div
+              className={`absolute inset-y-0 left-0 ${colors.bg} opacity-30 transition-all duration-700`}
+              style={{ width: `${percent}%` }}
+            />
+          )}
+          <div className="relative">
+            <span className="text-xs font-bold text-slate-500">{label}</span>
+            <p className="mt-1 text-lg font-bold break-keep">{text}</p>
+            {revealed && (
+              <p className="mt-3 text-sm text-slate-600">
+                <b className="text-2xl text-slate-800">{percent}%</b> · {votes}표 {picked && '✔ 내 선택'}
+              </p>
+            )}
+          </div>
+        </button>
+      );
+    }
+
+    function QuestionCard({ q, onVote }) {
+      const total = q.votes_a + q.votes_b;
+      const pa = total ? Math.round((q.votes_a / total) * 100) : 0;
+      const revealed = q.my_choice !== null;
+      return (
+        <article className="rounded-3xl bg-white/80 p-4 shadow-md backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+            <Side label="A" text={q.option_a} votes={q.votes_a} percent={pa} color="A"
+              picked={q.my_choice === 'A'} revealed={revealed} onClick={() => onVote(q.id, 'A')} />
+            <div className="self-center text-xl font-black text-violet-500">VS</div>
+            <Side label="B" text={q.option_b} votes={q.votes_b} percent={total ? 100 - pa : 0} color="B"
+              picked={q.my_choice === 'B'} revealed={revealed} onClick={() => onVote(q.id, 'B')} />
+          </div>
+          <p className="mt-3 text-center text-xs text-slate-500">
+            {revealed ? `총 ${total}명 참여 · 다른 쪽을 누르면 선택이 바뀌어요` : '골라야 결과가 보여요 👀'}
+          </p>
+        </article>
+      );
+    }
+
+    function NewQuestionForm({ onCreate }) {
+      const [a, setA] = useState('');
+      const [b, setB] = useState('');
+      const [busy, setBusy] = useState(false);
+      const submit = async (e) => {
+        e.preventDefault();
+        if (!a.trim() || !b.trim()) return;
+        setBusy(true);
+        try {
+          await onCreate(a, b);
+          setA(''); setB('');
+        } finally {
+          setBusy(false);
+        }
+      };
+      const input = 'w-full rounded-xl border border-slate-200 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-violet-400';
+      return (
+        <form onSubmit={submit} className="rounded-3xl bg-white/80 p-4 shadow-md">
+          <h2 className="mb-3 font-bold">✏️ 새 밸런스 질문 만들기</h2>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input className={input} value={a} maxLength={60} onChange={(e) => setA(e.target.value)} placeholder="A 선택지" />
+            <input className={input} value={b} maxLength={60} onChange={(e) => setB(e.target.value)} placeholder="B 선택지" />
+            <button disabled={busy || !a.trim() || !b.trim()}
+              className="shrink-0 rounded-xl bg-violet-500 px-5 py-2 font-semibold text-white hover:bg-violet-600 disabled:opacity-40">
+              올리기
+            </button>
+          </div>
+        </form>
+      );
+    }
+
+    function App() {
+      const [questions, setQuestions] = useState([]);
+      const [sort, setSort] = useState('new');
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(true);
+
+      const load = useCallback(async () => {
+        try {
+          setQuestions(await api(`/api/questions?voterId=${voterId}`));
+          setError('');
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      }, []);
+
+      // 몇 초마다 다시 불러와서 다른 사람 표가 실시간으로 반영되게
+      useEffect(() => {
+        load();
+        const timer = setInterval(load, POLL_MS);
+        return () => clearInterval(timer);
+      }, [load]);
+
+      const vote = async (id, choice) => {
+        try {
+          const updated = await api(`/api/questions/${id}/vote`, {
+            method: 'POST', body: JSON.stringify({ choice, voterId }),
+          });
+          setQuestions((qs) => qs.map((q) => (q.id === id ? updated : q)));
+        } catch (e) {
+          setError(e.message);
+        }
+      };
+
+      const create = async (optionA, optionB) => {
+        try {
+          const created = await api('/api/questions', {
+            method: 'POST', body: JSON.stringify({ optionA, optionB }),
+          });
+          setQuestions((qs) => [created, ...qs]);
+        } catch (e) {
+          setError(e.message);
+        }
+      };
+
+      const sorted = sort === 'hot'
+        ? [...questions].sort((x, y) => (y.votes_a + y.votes_b) - (x.votes_a + x.votes_b))
+        : questions;
+
+      return (
+        <div className="mx-auto max-w-3xl px-4 py-10">
+          <header className="text-center">
+            <div className="text-5xl">⚖️</div>
+            <h1 className="mt-2 text-3xl font-black">실시간 밸런스 게임</h1>
+            <p className="mt-2 text-slate-600">둘 중 하나만 고를 수 있다면? 친구들과 같이 골라 보세요!</p>
+            <p className="mt-1 text-xs text-emerald-600">● {POLL_MS / 1000}초마다 결과가 실시간으로 갱신돼요</p>
+          </header>
+
+          <div className="mt-8"><NewQuestionForm onCreate={create} /></div>
+
+          <div className="mt-6 flex justify-center gap-2">
+            {[['new', '🆕 최신순'], ['hot', '🔥 인기순']].map(([key, label]) => (
+              <button key={key} onClick={() => setSort(key)}
+                className={`rounded-full px-4 py-1 text-sm font-semibold ${sort === key ? 'bg-violet-500 text-white' : 'bg-white text-slate-600'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-center text-sm text-red-600">⚠️ {error}</p>}
+
+          <main className="mt-6 flex flex-col gap-4">
+            {loading && <p className="text-center text-slate-500">불러오는 중… ⏳</p>}
+            {!loading && sorted.length === 0 && <p className="text-center text-slate-500">아직 질문이 없어요. 첫 질문을 올려 보세요!</p>}
+            {sorted.map((q) => <QuestionCard key={q.id} q={q} onVote={vote} />)}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

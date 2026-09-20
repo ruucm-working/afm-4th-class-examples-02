@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>루움의 작은 홈페이지</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-sky-100 to-amber-50 text-slate-800">
+  <header class="max-w-3xl mx-auto px-4 pt-16 text-center">
+    <div class="text-6xl mb-4">🐣</div>
+    <h1 class="text-4xl font-bold">안녕하세요, 루움이에요!</h1>
+    <p class="mt-3 text-slate-600">AI 공장장 부트캠프 4기에서 배운 것들을 모아 둔 작은 홈페이지예요 ✨</p>
+    <button id="greet"
+      class="mt-6 px-5 py-2 rounded-full bg-sky-500 text-white font-semibold hover:bg-sky-600 active:scale-95 transition">
+      인사 받기 👋
+    </button>
+    <p id="message" class="mt-4 h-6 text-sky-700 font-medium"></p>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-12 grid gap-4 sm:grid-cols-2">
+    <section class="bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold">🍳 레시피북</h2>
+      <p class="mt-2 text-slate-600">1~2주차에 만든 나만의 레시피 모음</p>
+    </section>
+    <section class="bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold">⚡ 포켓몬 도감</h2>
+      <p class="mt-2 text-slate-600">3~4주차에 만든 포켓몬 도감 웹앱</p>
+    </section>
+    <section class="bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold">✅ 투두앱</h2>
+      <p class="mt-2 text-slate-600">Express + Supabase로 만든 할 일 관리</p>
+    </section>
+    <section class="bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold">🎬 유튜브 요약</h2>
+      <p class="mt-2 text-slate-600">yt-dlp로 자막 받아 정리하기</p>
+    </section>
+  </main>
+
+  <footer class="text-center text-sm text-slate-500 pb-10">© 2026 루움 · Made with 🌈</footer>
+
+  <script>
+    const greetings = ['반가워요! 😊', '오늘도 화이팅! 💪', '좋은 하루 보내세요 🌸', '코딩 재밌죠? 🐾'];
+    document.getElementById('greet').addEventListener('click', () => {
+      const pick = greetings[Math.floor(Math.random() * greetings.length)];
+      document.getElementById('message').textContent = pick;
+    });
+  </script>
+</body>
+</html>

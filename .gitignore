@@ -43,3 +43,9 @@ week-*/class/yt-dlp/**/*.mp4
 week-*/class/yt-dlp/**/*.webm
 week-*/class/yt-dlp/**/*.m4a
 week-*/class/yt-dlp/**/*.mp3
+
+# 서브에이전트 로컬 메모리 (memory: local) - 이 컴퓨터에만 둔다
+.claude/agent-memory-local/
+
+# Codex 로컬 설정 (API 키 포함) - 커밋 금지
+.codex/config.toml
